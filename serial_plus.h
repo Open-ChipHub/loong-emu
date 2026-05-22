@@ -34,6 +34,8 @@
 
 #define UART_FIFO_LENGTH    16      /* 16550A Fifo Length */
 
+#define guint unsigned int
+
 struct SerialState {
     int infd;
     int outfd;
@@ -109,7 +111,7 @@ typedef struct {
 #define SCALE_US 1000
 #define SCALE_NS 1
 
-SerialState *simple_serial_init(int base, qemu_irq irq, int baudbase);
+SerialState *simple_serial_init(unsigned long base, qemu_irq irq, int baudbase);
 SerialState *simple_serial_restore(int base, qemu_irq irq, int baudbase, const char* filename);
 uint64_t serial_plus_ioport_read(void *opaque, hwaddr addr, unsigned size);
 void serial_plus_ioport_write(void *opaque, hwaddr addr, uint64_t val, unsigned size);

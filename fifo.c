@@ -15,6 +15,9 @@
 #include "qemu/osdep.h"
 #include "qemu/fifo8.h"
 
+#define g_new(type, num) (type*)malloc(sizeof(type) * num);
+#define g_free(ptr) free(ptr);
+
 void fifo8_create(Fifo8 *fifo, uint32_t capacity)
 {
     fifo->data = g_new(uint8_t, capacity);

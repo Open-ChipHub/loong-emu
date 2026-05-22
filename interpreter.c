@@ -12,6 +12,9 @@
 
 #include <stdalign.h>
 
+#define g_assert_not_reached abort
+#define g_assert assert
+
 #ifndef CONFIG_DIFF
 static inline long long la_get_tval(CPULoongArchState *env){
     if (determined) {
@@ -702,7 +705,7 @@ bool is_aligned(uint64_t addr, int bytes) {
 bool is_unaligned(uint64_t addr, int bytes) {
     return !is_aligned(addr, bytes);
 }
-
+int ddebug = 0;
 static hwaddr load_pa(CPULoongArchState *env, uint64_t addr) {
     PERF_INC(COUNTER_INST_LOAD);
 #ifdef CONFIG_USER_ONLY
@@ -710,6 +713,10 @@ static hwaddr load_pa(CPULoongArchState *env, uint64_t addr) {
 #endif
     hwaddr ha;
     int prot;
+
+    if (((addr) & 0xffffffff00000000) == 0xffff807c00000000) {
+        ddebug = 1;
+    }
     int tc_index = TC_INDEX(addr);
     TLBCache* tc = env->tc_load + tc_index;
     uint64_t page_addr = addr & TARGET_PAGE_MASK;
@@ -751,11 +758,17 @@ static hwaddr store_pa(CPULoongArchState *env, uint64_t addr) {
 // exclude 32MB bios
 static bool is_io(hwaddr ha) {
     return (ha >= 0x10000000 && ha < 0x1c000000)
-            || (ha > 0x1e000000 && ha < 0x90000000);
+            || (ha > 0x1e000000 && ha < 0x20000000)
+            || (ha >=0x100000000 && ha < 0x120000000);
 }
+// static bool is_io(hwaddr ha) {
+//     return false;
+// }
 #endif
-
+int lsu_debug = 0;
 static uint64_t add_addr(int64_t base, int64_t disp) {
+    if((uint64_t)(base + disp) == 0x9000000000fcbb90)
+        lsu_debug = 1;
     return (uint64_t)(base + disp);
 }
 
@@ -1155,6 +1168,13 @@ static bool trans_ll_w(CPULoongArchState *env, arg_ll_w *restrict a) {
 }
 static bool trans_sc_w(CPULoongArchState *env, arg_sc_w *restrict a) {
     hwaddr ha = store_pa(env, env->gpr[a->rj] + a->imm);
+#ifdef CONFIG_DIFF
+    // In difftest mode with shared RAM, the DUT's SC has already committed
+    // (modifying RAM and setting rd). The REF should trust the DUT's result
+    // rather than re-checking against shared RAM which has been altered.
+    // The rd value was synced from DUT via difftest_regcpy before this instr.
+    (void)ha;
+#else
     if (FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
         env->lladdr == ha && env->llval == ram_ldw(ha)) {
         ram_stw(ha, env->gpr[a->rd]);
@@ -1162,6 +1182,7 @@ static bool trans_sc_w(CPULoongArchState *env, arg_sc_w *restrict a) {
     } else {
         env->gpr[a->rd] = 0;
     }
+#endif
     env->pc += 4;
     return true;
 }
@@ -1176,6 +1197,10 @@ static bool trans_ll_d(CPULoongArchState *env, arg_ll_d *restrict a) {
 }
 static bool trans_sc_d(CPULoongArchState *env, arg_sc_d *restrict a) {
     hwaddr ha = store_pa(env, env->gpr[a->rj] + a->imm);
+#ifdef CONFIG_DIFF
+    // In difftest mode, trust DUT's SC result synced via difftest_regcpy
+    (void)ha;
+#else
     if (FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
         env->lladdr == ha && env->llval == ram_ldd(ha)) {
         ram_std(ha, env->gpr[a->rd]);
@@ -1183,6 +1208,7 @@ static bool trans_sc_d(CPULoongArchState *env, arg_sc_d *restrict a) {
     } else {
         env->gpr[a->rd] = 0;
     }
+#endif
     env->pc += 4;
     return true;
 }
@@ -1577,8 +1603,10 @@ static bool trans_rdtimel_w(CPULoongArchState *env, arg_rdtimel_w *restrict a) {
 #ifndef CONFIG_DIFF
     long long tval = la_get_tval(env);
     gen_set_gpr(env, a->rd, tval, EXT_SIGN);
-    env->gpr[a->rj] = 0;
+#else
+    gen_set_gpr(env, a->rd, 0, EXT_SIGN);
 #endif
+    env->gpr[a->rj] = 0;
     env->pc += 4;
     return true;
 }
@@ -1586,16 +1614,20 @@ static bool trans_rdtimeh_w(CPULoongArchState *env, arg_rdtimeh_w *restrict a) {
 #ifndef CONFIG_DIFF
     long long tval = la_get_tval(env);
     gen_set_gpr(env, a->rd, tval >> 32, EXT_SIGN);
-    env->gpr[a->rj] = 0;
+#else
+    gen_set_gpr(env, a->rd, 0, EXT_SIGN);
 #endif
+    env->gpr[a->rj] = 0;
     env->pc += 4;
     return true;
 }
 static bool trans_rdtime_d(CPULoongArchState *env, arg_rdtime_d *restrict a) {
 #ifndef CONFIG_DIFF
     env->gpr[a->rd] = la_get_tval(env);
-    env->gpr[a->rj] = 0;
+#else
+    env->gpr[a->rd] = 0;
 #endif
+    env->gpr[a->rj] = 0;
     env->pc += 4;
     return true;
 }

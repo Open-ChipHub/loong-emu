@@ -369,3 +369,199 @@ void restore_checkpoint(CPULoongArchState *env, char* name) {
 void la_emu_save_checkpoint(void *env, char* name) {
     save_checkpoint((CPULoongArchState*)env, name);
 }
+
+
+static void checkpoint_save_csr_register(CPULoongArchState *env, FILE* CKP_CSR_FP)
+{
+    for (int i = 0; i < 32; i++)
+        fwrite(&env->gpr[i], sizeof(uint64_t), 1, CKP_CSR_FP);
+    fwrite(&env->pc, sizeof(uint64_t), 1, CKP_CSR_FP);
+    /// float point unit
+    for (int i = 0; i < 32; i++)
+        fwrite(&env->fpr[i], sizeof(fpr_t), 1, CKP_CSR_FP);
+    for (int i = 0; i < 8; i++)
+        fwrite(&env->cf[i], sizeof(uint8_t), 1, CKP_CSR_FP);
+    fwrite(&env->fcsr0, sizeof(uint32_t), 1, CKP_CSR_FP);
+    fwrite(&env->CSR_CRMD, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PRMD, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_EUEN, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_MISC, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_ECFG, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_ESTAT, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_ERA, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_BADV, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_BADI, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_EENTRY, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TLBIDX, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TLBEHI, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TLBELO0, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TLBELO1, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_ASID, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PGDL, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PGDH, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PGD, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PWCL, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PWCH, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_STLBPS, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_RVACFG, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_CPUID, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PRCFG1, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PRCFG2, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_PRCFG3, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_SAVE[0], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_SAVE[1], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_SAVE[2], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_SAVE[3], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TID, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // TCFG
+    fwrite(&env->CSR_TCFG, sizeof(uint64_t), 1, CKP_CSR_FP);
+    // TVAL
+    fwrite(&current_env->icount, sizeof(uint64_t), 1, CKP_CSR_FP);
+    // CNTC
+    fwrite(&env->CSR_CNTC, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TICLR, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_LLBCTL, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_IMPCTL1, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_IMPCTL2, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TLBRENTRY, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_TLBRBADV, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_TLBRERA, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_TLBRSAVE, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_TLBRELO0, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_TLBRELO1, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_TLBREHI, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_TLBRPRMD, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_MERRCTL, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_MERRINFO1, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_MERRINFO2, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_MERRENTRY, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_MERRERA, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_MERRSAVE, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_CTAG, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_DMW[0], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_DMW[1], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_DMW[2], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    fwrite(&env->CSR_DMW[3], sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_DBG, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_DERA, sizeof(uint64_t), 1, CKP_CSR_FP);  
+    // fwrite(&env->CSR_DSAVE, sizeof(uint64_t), 1, CKP_CSR_FP);  
+}
+
+
+
+static void checkpoint_dump_rergister(CPULoongArchState *env, FILE* CKP_CSR_DUMP_FP) {
+
+    for (int i = 0; i < 32; i++) {
+        fprintf(CKP_CSR_DUMP_FP, "GPR %d: %lx\n", i,env->gpr[i]); 
+    }    
+    fprintf(CKP_CSR_DUMP_FP, "\n");                              
+    fprintf(CKP_CSR_DUMP_FP, "PC: %lx\n\n", env->pc);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_CRMD      : 0x%lx\n", env->CSR_CRMD);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PRMD      : 0x%lx\n", env->CSR_PRMD);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_EUEN      : 0x%lx\n", env->CSR_EUEN);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_MISC      : 0x%lx\n", env->CSR_MISC);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_ECFG      : 0x%lx\n", env->CSR_ECFG);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_ESTAT     : 0x%lx\n", env->CSR_ESTAT);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_ERA       : 0x%lx\n", env->CSR_ERA);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_BADV      : 0x%lx\n", env->CSR_BADV);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_BADI      : 0x%lx\n", env->CSR_BADI);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_EENTRY    : 0x%lx\n", env->CSR_EENTRY);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TLBIDX    : 0x%lx\n", env->CSR_TLBIDX);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TLBEHI    : 0x%lx\n", env->CSR_TLBEHI);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TLBELO0   : 0x%lx\n", env->CSR_TLBELO0);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TLBELO1   : 0x%lx\n", env->CSR_TLBELO1);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_ASID      : 0x%lx\n", env->CSR_ASID);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PGDL      : 0x%lx\n", env->CSR_PGDL);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PGDH      : 0x%lx\n", env->CSR_PGDH);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PGD       : 0x%lx\n", env->CSR_PGD);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PWCL      : 0x%lx\n", env->CSR_PWCL);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PWCH      : 0x%lx\n", env->CSR_PWCH);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_STLBPS    : 0x%lx\n", env->CSR_STLBPS);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_RVACFG    : 0x%lx\n", env->CSR_RVACFG);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_CPUID     : 0x%lx\n", env->CSR_CPUID);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PRCFG1    : 0x%lx\n", env->CSR_PRCFG1);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PRCFG2    : 0x%lx\n", env->CSR_PRCFG2);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_PRCFG3    : 0x%lx\n", env->CSR_PRCFG3);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_SAVE      : 0x%lx\n", env->CSR_SAVE[0]);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_SAVE      : 0x%lx\n", env->CSR_SAVE[1]);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_SAVE      : 0x%lx\n", env->CSR_SAVE[2]);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_SAVE      : 0x%lx\n", env->CSR_SAVE[3]);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TID       : 0x%lx\n", env->CSR_TID);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TCFG      : 0x%lx\n", env->CSR_TCFG);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TVAL      : 0x%lx\n", env->CSR_TVAL);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TVAL      : 0x%lx\n", env->timer_counter);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_CNTC      : 0x%lx\n", env->CSR_CNTC);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TICLR     : 0x%lx\n", env->CSR_TICLR);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_LLBCTL    : 0x%lx\n", env->CSR_LLBCTL);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TLBRENTRY : 0x%lx\n", env->CSR_TLBRENTRY);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_TLBREHI   : 0x%lx\n", env->CSR_TLBREHI);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_MERRENTRY : 0x%lx\n", env->CSR_MERRENTRY);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_DMW[0]    : 0x%lx\n", env->CSR_DMW[0]);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_DMW[1]    : 0x%lx\n", env->CSR_DMW[1]);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_DMW[2]    : 0x%lx\n", env->CSR_DMW[2]);  
+    fprintf(CKP_CSR_DUMP_FP, "CSR_DMW[3]    : 0x%lx\n", env->CSR_DMW[3]);  
+}
+
+#include "serial_plus.h"
+#define CKP_RAM_SIZE 0x100000000
+
+extern SerialState *ss;
+
+uint64_t check_point_pc = 0x0;
+bool emu_cpu_check_point = false;
+uint64_t check_point_hit_num = 1;
+uint64_t fetch_num = 0;
+
+// CPU State Register
+FILE* CKP_CSR_FP;
+FILE* CKP_CSR_DUMP_FP;
+
+// Checkpoint File pointer
+FILE* CKP_FP;
+
+// CPU UART Register
+FILE* CKP_UART_FP;
+
+FILE* CKP_DP_PC;
+long debug_print_pc = 0;
+
+void checkpoint_context(CPULoongArchState *env) {
+    unsigned long fwcount = 0;
+    
+    if (emu_cpu_check_point) {
+        // 1. Save Current States.
+        CKP_CSR_FP = fopen("checkpoint_csr.bin", "w");
+        if (!CKP_CSR_FP) {
+            printf("open checkpoint_csr.bin failed!\n");
+        }
+        checkpoint_save_csr_register(env, CKP_CSR_FP);
+        fclose(CKP_CSR_FP);
+        CKP_CSR_DUMP_FP = fopen("checkpoint_csr.txt", "w");
+        if (!CKP_CSR_DUMP_FP) {
+            printf("open checkpoint_csr.txt failed!\n");
+        }
+        checkpoint_dump_rergister(env, CKP_CSR_DUMP_FP);
+        fclose(CKP_CSR_DUMP_FP);
+        // 2. Save Serial
+        CKP_UART_FP = fopen("checkpoint_serial.bin", "w");
+        if (!CKP_UART_FP) {
+            printf("open checkpoint_serial.bin failed!\n");
+        }
+        fwrite(ss, sizeof(SerialState), 1, CKP_UART_FP);
+        fclose(CKP_UART_FP);
+        // 3. Save memory.
+        CKP_FP = fopen("checkpoint_ram.bin", "w");
+        if (!CKP_FP) {
+            printf("open checkpoint_ram.bin failed!\n");
+        }
+        fwcount = fwrite(ram, 1, CKP_RAM_SIZE, CKP_FP);
+        if (fwcount == CKP_RAM_SIZE) {
+            printf("\033[1m\033[33mCheckPoint has successfully saved into file!\n");
+            // while (1);
+            // exit(0);
+        } else {
+            printf("CheckPoint has failed!\n");
+            exit(1);
+        }
+    }
+}

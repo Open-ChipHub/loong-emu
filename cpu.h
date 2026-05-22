@@ -76,7 +76,7 @@ typedef enum MMUAccessType {
 #define PAGE_VALID     0x0008
 
 #define TARGET_LONG_BITS 64
-#define TARGET_PHYS_ADDR_SPACE_BITS 48
+#define TARGET_PHYS_ADDR_SPACE_BITS 36
 #define TARGET_VIRT_ADDR_SPACE_BITS 48
 
 
@@ -526,6 +526,10 @@ typedef struct CPUState {
     CPULoongArchState *env;
     sigjmp_buf jmp_env;
     int halted;
+    void* gdb_regs;
+    int gdb_num_regs;
+    int gdb_num_g_regs;
+    int cluster_index;
     char neg_align[-sizeof(CPUNegativeOffsetState) % 16] QEMU_ALIGNED(16);
     CPUNegativeOffsetState neg;
 }CPUState;
@@ -692,6 +696,7 @@ static inline void ram_std(hwaddr addr, uint64_t data) {*(uint64_t*)(ram + addr)
 // static inline void ram_st256(hwaddr addr, VReg data) {*(VReg*)(ram + addr) = data;}
 bool addr_in_ram(hwaddr pa);
 static inline bool ram_ldub_check(hwaddr addr, uint8_t *data) {if (!addr_in_ram(addr)){*data = 0xff; return false;} *data = *(uint8_t*)(ram + addr); return true;}
+static inline bool ram_stub_check(hwaddr addr, uint8_t *data) {if (!addr_in_ram(addr)){return false;} *(uint8_t*)(ram + addr) = *data; return true;}
 #endif
 
 G_NORETURN void cpu_loop_exit(CPUState *cpu);
@@ -814,6 +819,7 @@ bool loongarch_cpu_has_irq(CPULoongArchState *env);
 
 void loongarch_la464_initfn(CPULoongArchState* env);
 void loongarch_centaur320_initfn(CPULoongArchState* env);
+void loongarch_openc910_initfn(CPULoongArchState* env);
 
 static inline bool enable_hw_ptw(CPULoongArchState* env) {
     return hw_ptw ||

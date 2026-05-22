@@ -999,7 +999,7 @@ void simple_serial_set_frequency(SerialState *s, uint32_t frequency)
 //     .endianness = DEVICE_LITTLE_ENDIAN,
 // };
 
-SerialState *simple_serial_init(int base, qemu_irq irq, int baudbase)
+SerialState *simple_serial_init(unsigned long base, qemu_irq irq, int baudbase)
 {
     SerialState *s;
 

@@ -96,6 +96,9 @@ this code that are retained.
 *----------------------------------------------------------------------------*/
 #include "fpu/softfloat-macros.h"
 
+#define g_assert_not_reached abort
+#define g_assert assert
+
 /*
  * Hardfloat
  *

@@ -15,6 +15,9 @@
 #include "tcg/tcg-gvec-desc.h"
 #include "exec/memop.h"
 
+#define g_assert_not_reached abort
+#define g_assert assert
+
 #define dup_const(VECE, C)                                         \
     (__builtin_constant_p(VECE)                                    \
      ? (  (VECE) == MO_8  ? 0x0101010101010101ull * (uint8_t)(C)   \

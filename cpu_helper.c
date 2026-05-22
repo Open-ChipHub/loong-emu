@@ -366,3 +366,283 @@ hwaddr loongarch_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
     }
     return phys_addr;
 }
+
+
+#define PROBE_LA_DEBUG 1
+
+#if PROBE_LA_DEBUG
+
+static target_ulong helper_lddir_debug(CPULoongArchState *env, target_ulong base,
+                          target_ulong level, uint32_t mem_idx, target_ulong address,
+                          target_ulong* dir_phys_addr)
+{
+    CPUState *cs = env_cpu(env);
+    target_ulong badvaddr, index, phys, ret;
+    int shift;
+    uint64_t dir_base, dir_width;
+
+    if (unlikely((level == 0) || (level > 4))) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "Attepted LDDIR with level %"PRId64"\n", level);
+        return base;
+    }
+
+    if (FIELD_EX64(base, TLBENTRY, HUGE)) {
+        if (unlikely(level == 4)) {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "Attempted use of level 4 huge page\n");
+        }
+
+        if (FIELD_EX64(base, TLBENTRY, LEVEL)) {
+            return base;
+        } else {
+            return FIELD_DP64(base, TLBENTRY, LEVEL, level);
+        }
+    }
+
+    badvaddr = address;
+    base = base & TARGET_PHYS_MASK;
+
+    /* 0:64bit, 1:128bit, 2:192bit, 3:256bit */
+    shift = FIELD_EX64(env->CSR_PWCL, CSR_PWCL, PTEWIDTH);
+    shift = (shift + 1) * 3;
+
+    get_dir_base_width(env, &dir_base, &dir_width, level);
+    index = (badvaddr >> dir_base) & ((1 << dir_width) - 1);
+    phys = base | index << shift;
+    *dir_phys_addr = phys;
+    ret = ldq_phys(cs->as, phys & TARGET_PHYS_MASK);
+    return ret;
+}
+
+
+static void helper_ldpte_debug(CPULoongArchState *env, target_ulong base, target_ulong odd,
+                               uint32_t mem_idx, target_ulong* pte_phys_addr, target_ulong address,
+                               target_ulong* pte_value)
+{
+    CPUState *cs = env_cpu(env);
+    target_ulong phys, tmp0, ptindex, ptoffset0, ptoffset1, ps, badv;
+    int shift;
+    uint64_t ptbase = FIELD_EX64(env->CSR_PWCL, CSR_PWCL, PTBASE);
+    uint64_t ptwidth = FIELD_EX64(env->CSR_PWCL, CSR_PWCL, PTWIDTH);
+    uint64_t dir_base, dir_width;
+
+    /*
+     * The parameter "base" has only two types,
+     * one is the page table base address,
+     * whose bit 6 should be 0,
+     * and the other is the huge page entry,
+     * whose bit 6 should be 1.
+     */
+    if (FIELD_EX64(base, TLBENTRY, HUGE)) {
+        /*
+         * Gets the huge page level and Gets huge page size.
+         * Clears the huge page level information in the entry.
+         * Clears huge page bit.
+         * Move HGLOBAL bit to GLOBAL bit.
+         */
+        get_dir_base_width(env, &dir_base, &dir_width,
+                           FIELD_EX64(base, TLBENTRY, LEVEL));
+
+        base = FIELD_DP64(base, TLBENTRY, LEVEL, 0);
+        base = FIELD_DP64(base, TLBENTRY, HUGE, 0);
+        if (FIELD_EX64(base, TLBENTRY, HGLOBAL)) {
+            base = FIELD_DP64(base, TLBENTRY, HGLOBAL, 0);
+            base = FIELD_DP64(base, TLBENTRY, G, 1);
+        }
+
+        ps = dir_base + dir_width - 1;
+        /*
+         * Huge pages are evenly split into parity pages
+         * when loaded into the tlb,
+         * so the tlb page size needs to be divided by 2.
+         */
+        tmp0 = base;
+        if (odd) {
+            tmp0 += MAKE_64BIT_MASK(ps, 1);
+        }
+    } else {
+        /* 0:64bit, 1:128bit, 2:192bit, 3:256bit */
+        shift = FIELD_EX64(env->CSR_PWCL, CSR_PWCL, PTEWIDTH);
+        shift = (shift + 1) * 3;
+        badv = address;
+
+        ptindex = (badv >> ptbase) & ((1 << ptwidth) - 1);
+        ptindex = ptindex & ~0x1;   /* clear bit 0 */
+        ptoffset0 = ptindex << shift;
+        ptoffset1 = (ptindex + 1) << shift;
+
+        phys = base | (odd ? ptoffset1 : ptoffset0);
+        *pte_phys_addr = phys;
+        tmp0 = ldq_phys(cs->as, phys & TARGET_PHYS_MASK);
+        ps = ptbase;
+    }
+    *pte_value = tmp0;
+}
+
+
+static int loongarch_check_tlb_entry(CPULoongArchState *env, hwaddr *physical,
+                                     int *prot, target_ulong address,
+                                     int access_type, uint64_t tlb_entry0, int mmu_idx)
+{
+    uint64_t plv = mmu_idx;
+    uint64_t tlb_entry, tlb_ppn;
+    uint8_t tlb_ps, tlb_v, tlb_d, tlb_plv, tlb_nx, tlb_nr, tlb_rplv;
+
+    tlb_ps = FIELD_EX64(env->CSR_STLBPS, CSR_STLBPS, PS);
+
+    tlb_entry = tlb_entry0;
+    tlb_v = FIELD_EX64(tlb_entry, TLBENTRY, V);
+    tlb_d = FIELD_EX64(tlb_entry, TLBENTRY, D);
+    tlb_plv = FIELD_EX64(tlb_entry, TLBENTRY, PLV);
+    if (is_la64(env)) {
+        tlb_ppn = FIELD_EX64(tlb_entry, TLBENTRY_64, PPN);
+        tlb_nx = FIELD_EX64(tlb_entry, TLBENTRY_64, NX);
+        tlb_nr = FIELD_EX64(tlb_entry, TLBENTRY_64, NR);
+        tlb_rplv = FIELD_EX64(tlb_entry, TLBENTRY_64, RPLV);
+    } else {
+        tlb_ppn = FIELD_EX64(tlb_entry, TLBENTRY_32, PPN);
+        tlb_nx = 0;
+        tlb_nr = 0;
+        tlb_rplv = 0;
+    }
+
+    /* Remove sw bit between bit12 -- bit PS*/
+    tlb_ppn = tlb_ppn & ~(((0x1UL << (tlb_ps - 12)) -1));
+
+    /* Check access rights */
+    if (!tlb_v) {
+        return TLBRET_INVALID;
+    }
+
+    if (access_type == MMU_INST_FETCH && tlb_nx) {
+        return TLBRET_XI;
+    }
+
+    if (access_type == MMU_DATA_LOAD && tlb_nr) {
+        return TLBRET_RI;
+    }
+
+    if (((tlb_rplv == 0) && (plv > tlb_plv)) ||
+        ((tlb_rplv == 1) && (plv != tlb_plv))) {
+        return TLBRET_PE;
+    }
+
+    if ((access_type == MMU_DATA_STORE) && !tlb_d) {
+        return TLBRET_DIRTY;
+    }
+
+    *physical = (tlb_ppn << R_TLBENTRY_64_PPN_SHIFT) |
+                (address & MAKE_64BIT_MASK(0, tlb_ps));
+    *prot = PAGE_READ;
+    if (tlb_d) {
+        *prot |= PAGE_WRITE;
+    }
+    if (!tlb_nx) {
+        *prot |= PAGE_EXEC;
+    }
+    return TLBRET_MATCH;
+}
+
+
+static int loongarch_map_address_debug(CPULoongArchState *env, hwaddr *physical,
+                                 int *prot, target_ulong address,
+                                 MMUAccessType access_type, int mmu_idx)
+{
+    int index, match;
+
+    match = loongarch_tlb_search(env, address, &index);
+    if (match) {
+        return loongarch_map_tlb_entry(env, physical, prot,
+                                       address, access_type, index, mmu_idx);
+    }
+
+    if (!match)
+    {
+        // save tlbr csr state
+        target_ulong pte_value;
+        uint8_t tlb_ps;
+        int n;
+
+        uint64_t pt_base = ((address >> 63) & 0x1) ? env->CSR_PGDH : env->CSR_PGDL;
+        uint64_t dir_phys_addr = 0, pte0_phys_addr = 0;
+        bool is_huge = false;
+        for (int level = 4; level >= 1; level--) {
+            uint64_t dir_base, dir_width;
+            get_dir_base_width(env, &dir_base, &dir_width, level);
+            if (dir_width) {
+                pt_base = helper_lddir_debug(env, pt_base, level, 0, address, &dir_phys_addr);
+                if (FIELD_EX64(pt_base, TLBENTRY, HUGE) && !is_huge) {
+                    is_huge = true;
+                }
+            }
+        }
+
+        tlb_ps = FIELD_EX64(env->CSR_STLBPS, CSR_STLBPS, PS);
+
+        n = (address >> tlb_ps) & 0x1;/* Odd or even */
+        helper_ldpte_debug(env, pt_base, n, 0, &pte0_phys_addr, address, &pte_value);
+
+        return loongarch_check_tlb_entry(env, physical, prot, address, 
+                                        access_type, pte_value, mmu_idx);
+    }
+
+    return TLBRET_NOMATCH;
+}
+
+
+int get_physical_address_debug(CPULoongArchState *env, hwaddr *physical,
+                         int *prot, target_ulong address,
+                         MMUAccessType access_type, int mmu_idx)
+{
+    int user_mode = mmu_idx == MMU_USER_IDX;
+    int kernel_mode = mmu_idx == MMU_KERNEL_IDX;
+    uint32_t plv, base_c, base_v;
+    int64_t addr_high;
+    uint8_t da = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, DA);
+    uint8_t pg = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PG);
+
+    /* Check PG and DA */
+    if (da & !pg) {
+        *physical = address & TARGET_PHYS_MASK;
+        *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+        return TLBRET_MATCH;
+    }
+
+    plv = kernel_mode | (user_mode << R_CSR_DMW_PLV3_SHIFT);
+    if (is_la64(env)) {
+        base_v = address >> R_CSR_DMW_64_VSEG_SHIFT;
+    } else {
+        base_v = address >> R_CSR_DMW_32_VSEG_SHIFT;
+    }
+    /* Check direct map window */
+    for (int i = 0; i < 4; i++) {
+        if (is_la64(env)) {
+            base_c = FIELD_EX64(env->CSR_DMW[i], CSR_DMW_64, VSEG);
+        } else {
+            base_c = FIELD_EX64(env->CSR_DMW[i], CSR_DMW_32, VSEG);
+        }
+        if ((plv & env->CSR_DMW[i]) && (base_c == base_v)) {
+            *physical = dmw_va2pa(env, address, env->CSR_DMW[i]);
+            *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+            return TLBRET_MATCH;
+        }
+    }
+
+    /* Check valid extension */
+    addr_high = sextract64(address, TARGET_VIRT_ADDR_SPACE_BITS, 16);
+    if (!(addr_high == 0 || addr_high == -1)) {
+        return TLBRET_BADADDR;
+    }
+
+    /* Mapped address */
+    return loongarch_map_address_debug(env, physical, prot, address,
+                                        access_type, mmu_idx);
+}
+
+
+
+#endif
+
+
+

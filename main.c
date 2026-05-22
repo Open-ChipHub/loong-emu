@@ -17,7 +17,7 @@
 #include "internals.h"
 
 #if defined(CONFIG_GDB)
-#include "gdbserver.h"
+#include "gdbstub/gdbserver.h"
 #endif
 #if defined(CONFIG_USER_ONLY)
 #include "user.h"
@@ -79,6 +79,7 @@ static void sigaction_entry_timer(int signal, siginfo_t *si, void *arg) {
     if (id==current_env->timerid) {
         qemu_log_mask(CPU_LOG_TIMER, "TIMER alarmed, icount:%ld\n", current_env->icount);
         current_env->timer_int = true;
+        current_env->timer_int = 0;
     } else {
         fprintf(stderr, "TIMER, it's somebody else!\n");
     }
@@ -193,14 +194,21 @@ static target_ulong user_setup_stack() {
 #define elf_phdr Elf64_Phdr
 #if !defined (CONFIG_USER_ONLY) && !defined (CONFIG_DIFF)
 static char* alloc_ram(uint64_t ram_size) {
-    void* start = mmap(NULL, ram_size + SZ_2G, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    lsassert(start != MAP_FAILED);
-    void* part1 = mmap(start, SZ_256M, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-    lsassert(part1 != MAP_FAILED);
-    void* part2 = mmap(start + SZ_2G + SZ_256M, ram_size - SZ_256M, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-    lsassert(part2 != MAP_FAILED);
-    void* part3 = mmap(start + 0x1c000000, SZ_32M, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-    lsassert(part3 != MAP_FAILED);
+//    void* start = mmap(NULL, ram_size + SZ_2G, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+//    lsassert(start != MAP_FAILED);
+//    void* part1 = mmap(start, SZ_256M, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+//    lsassert(part1 != MAP_FAILED);
+//    void* part2 = mmap(start + SZ_2G + SZ_256M, ram_size - SZ_256M, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+//    lsassert(part2 != MAP_FAILED);
+//    void* part3 = mmap(start + 0x1c000000, SZ_32M, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+//    lsassert(part3 != MAP_FAILED);
+    void* part1 = mmap(NULL, SZ_4G, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+//    unsigned long * ram_ptr = part1;
+//    if (ram_ptr != MAP_FAILED) {
+//        for (int i = 0; i < SZ_4G/8; i++) {
+//            *ram_ptr++ = rand();
+//        }
+//    }
     return part1;
 }
 
@@ -209,6 +217,38 @@ bool addr_in_ram(hwaddr pa) {
         (pa < SZ_256M) ||
         (pa >= SZ_2G + SZ_256M && pa < ram_size + SZ_2G) ||
         (pa >= 0x1c000000 && pa < 0x1c000000 + SZ_32M);
+}
+
+bool load_binary(const char* filename, uint64_t entry_addr) {
+    int ret = 0;
+    int size = 0;
+    uint8_t *data_ptr;
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0) {
+        perror(filename);
+        ret = 1;
+        goto fail;
+    }
+
+    struct stat st;
+    stat(filename, &st);
+    size = st.st_size;
+    data_ptr = (uint8_t*)malloc(size);
+
+    if (read(fd, data_ptr, size) != size) {
+        goto fail;
+    }
+
+    memcpy(ram + (entry_addr & 0xffffffff), data_ptr, size);
+
+    free((void*)data_ptr);
+    data_ptr = 0;
+
+fail:
+    close(fd);
+    if (data_ptr)
+        free((void*)data_ptr);
+    return ret;
 }
 
 bool load_elf(const char* filename, uint64_t* entry_addr) {
@@ -266,7 +306,7 @@ bool load_elf(const char* filename, uint64_t* entry_addr) {
                     goto fail;
                 }
                 // ram_writen(ph->p_paddr & 0xfffffff, data, file_size);
-                memcpy(ram + (ph->p_paddr & 0xffffffffffff), data, file_size);
+                memcpy(ram + (ph->p_paddr & 0xffffffff), data, file_size);
                 qemu_log_mask(CPU_LOG_PAGE, "%lx, file_size:%lx mem_size:%lx, \n", ph->p_paddr, file_size, mem_size);
             }
             free((void*)data);
@@ -697,8 +737,37 @@ static uint32_t fetch(CPULoongArchState *env, INSCache** ic) {
 #endif
 }
 
-int val;
+extern uint64_t check_point_pc;
+extern bool emu_cpu_check_point;
+extern uint64_t check_point_hit_num;
+extern uint64_t fetch_num;
+extern long debug_print_pc;
+extern FILE* CKP_DP_PC;
+uint64_t pre_pc = 0;
 
+extern bool gdb_verbose;
+
+bool load_bios = false;
+uint64_t load_bios_entry = 0x0;
+
+FILE* DUMP_DP_PC;
+int has_opend = 0;
+int check_dump_enable = 0;
+int dump_enable_arch_mode = 0;
+uint64_t dbg_prev_pc = 0;
+
+// only for debug
+unsigned long watch_pc;
+unsigned long watch_sp;
+unsigned long watch_era;
+unsigned int  enable_watch_gdb_mode = 0;
+
+
+void checkpoint_context(CPULoongArchState *env);
+
+int val;
+int debug;
+uint64_t test_pc;
 int exec_env(CPULoongArchState *env) {
     INSCache* ic;
     current_env = env;
@@ -734,6 +803,7 @@ int exec_env(CPULoongArchState *env) {
                 }
                 for (int i = 0; i < GDB_FETCCH_BREAKPOINT_NUM; i++) {
                     if (env->pc == gdb_fetch_breakpoint[i]) {
+                        if (gdb_verbose)
                         fprintf(stderr, "hit breakpoint %lx\n", env->pc);
                         return 2;
                     }
@@ -749,6 +819,43 @@ int exec_env(CPULoongArchState *env) {
                         show_register_fpr(env);
                     }
                 }
+                test_pc = env->pc;
+                if (env->pc == 0x80001e28) {
+                    debug = 1;
+                }
+                if (env->pc == 0x900000000067e05c) {
+                    debug = 1;
+                }
+
+                if (emu_cpu_check_point && (env->pc == check_point_pc)){
+                    fetch_num++;
+                    // the first trigger do_page_fault, the second run real elf
+                    if (fetch_num == check_point_hit_num) {
+                        checkpoint_context(env);
+                        CKP_DP_PC = fopen("checkpoint_pc.txt", "w");
+                        debug_print_pc = 1;
+                        printf("\033[1m\033[33mHit CheckPoint : %ld\n", fetch_num);
+                    } 
+                }
+
+                if ((env->pc == watch_pc)
+                    && (env->CSR_ERA == watch_era)
+                    && enable_watch_gdb_mode) {
+                    debug = 0;
+                }
+
+                if (check_dump_enable && !has_opend)
+                {
+                    DUMP_DP_PC = fopen("dump_pc.txt", "w");
+                    has_opend = 1;
+                }
+
+                if (has_opend && !check_dump_enable) {
+                    fclose(DUMP_DP_PC);
+                    has_opend = 0;
+                }
+
+
                 insn = fetch(env, &ic);
 #ifdef CONFIG_DIFF
                 env->insn = insn;
@@ -759,9 +866,44 @@ int exec_env(CPULoongArchState *env) {
                 plugin_ops->emu_insn_before(env, env->pc, insn);
             }
 #endif
+                test_pc = env->pc;
+
+                if (env->pc == 0x90000000009e4b68) {
+                    debug = 1;
+                }
+                if (env->pc == 0x7ffffff41c) {
+                    debug = 1;
+                }
+                if (env->pc == 0x80001f5c) {
+                    debug = 1;
+                }
+                if (env->pc == 0x800020c0) {
+                    debug = 1;
+                }
+                if (env->pc == 0x80000970) {
+                    debug = 1;
+                }
                 int r = interpreter(env, insn, ic);
+                test_pc = env->pc;
+                // if (debug_print_pc && (env->pc < 0x130000000)) {
+                if (debug_print_pc) {
+                    if (pre_pc != env->pc) {
+                        fprintf(CKP_DP_PC, "%lx\n", env->pc);
+                        pre_pc = env->pc;
+                    }
+                }
+
+                if (check_dump_enable 
+                    // && ((env->pc > 0x5555550000) && (env->pc < 0x555f550000))
+                    && (dbg_prev_pc != env->pc)) {
+                    fprintf(DUMP_DP_PC, "%lx\n", env->pc);
+                    fflush(DUMP_DP_PC);
+                    dbg_prev_pc = env->pc;
+                }
+
                 if(unlikely(!r)) {
                     qemu_log("ill instruction, pc:%lx insn:%08x\n", env->pc, insn);
+                    // while(1);
                 }
 
                 // need update after fetch and exec so exception would not cause singlestep and icount change
@@ -940,18 +1082,27 @@ void handle_checkmask(const char* str) {
 void do_io_st(hwaddr ha, uint64_t data, int size) {
     switch (ha)
     {
-    case UART_BASE ... UART_END:
+    case 0x1FF10000 ... 0x1FF11000:
         if (serial_plus) {
-            serial_plus_ioport_write(ss, ha - UART_BASE, data, size);
+            serial_plus_ioport_write(ss, ha, data, size);
         } else {
-            serial_ioport_write(NULL, ha - UART_BASE, data, size);
+            serial_ioport_write(NULL, ha, data, size);
         }
         break;
-    case 0x1fe002e0:
-            fprintf(stderr, "%c", (char)(data));
-            fflush(stdout);
+    case 0x1FE00000 ... 0x1FE01000:
+        if (serial_plus) {
+            serial_plus_ioport_write(ss, ha, data, size);
+        } else {
+            serial_ioport_write(NULL, ha, data, size);
+        }
         break;
-
+    case 0x11FF00000 ... 0x11FF10000:
+        if (serial_plus) {
+            serial_plus_ioport_write(ss, ha, data, size);
+        } else {
+            serial_ioport_write(NULL, ha, data, size);
+        }
+        break;    
     case 0x100d0014:
         fprintf(stderr,"lxy: %s:%d %s poweroff@100d0014 data:%x\n",__FILE__, __LINE__, __FUNCTION__, (int)data);
         if ((data & 0x3c00) == 0x3c00) {
@@ -963,7 +1114,7 @@ void do_io_st(hwaddr ha, uint64_t data, int size) {
         }
         break;
     default:
-        fprintf(stderr, "do_io_st, pc:%lx, addr:%lx, data:%lx, size:%d\n", current_env->pc, ha, data, size);
+        // fprintf(stderr, "do_io_st, pc:%lx, addr:%lx, data:%lx, size:%d\n", current_env->pc, ha, data, size);
         // lsassert(0);
     }
 }
@@ -971,21 +1122,32 @@ uint64_t do_io_ld(hwaddr ha, int size) {
     uint64_t data = 'x';
     switch (ha)
     {
-    case UART_BASE ... UART_END:
+    case 0x1FF10000 ... 0x1FF11000:
         if (serial_plus) {
-            data = serial_plus_ioport_read(ss, ha - UART_BASE, size);
+            data = serial_plus_ioport_read(ss, ha, size);
         } else {
-            data = serial_ioport_read(NULL, ha - UART_BASE, size);
+            data = serial_ioport_read(NULL, ha, size);
         }
         break;
-    case 0x1fe00120:
-            data = 'a';
+    case 0x1FE00000 ... 0x1FE01000:
+        if (serial_plus) {
+            data = serial_plus_ioport_read(ss, ha, size);
+        } else {
+            data = serial_ioport_read(NULL, ha, size);
+        }
+        break;
+    case 0x11FF00000 ... 0x11FF10000:
+        if (serial_plus) {
+            data = serial_plus_ioport_read(ss, ha, size);
+        } else {
+            data = serial_ioport_read(NULL, ha, size);
+        }
         break;
     case 0x100d0014:
         data = 0;
         break;
     default:
-        fprintf(stderr, "do_io_ld, addr:%lx, size:%d\n", ha, size);
+        // fprintf(stderr, "do_io_ld, addr:%lx, size:%d\n", ha, size);
         break;
     }
     return data;
@@ -1028,13 +1190,15 @@ bool loongarch_cpu_has_irq(CPULoongArchState *env) {
 
 #ifndef CONFIG_DIFF
 
+CPUState *current_cpu;
+
 int main(int argc, char** argv, char **envp) {
     logfile = stderr;
     if (argc < 2) {
         usage();
     }
     int c;
-    while ((c = getopt(argc, argv, "+m:nk:d:c:D:gzwsp:")) != -1) {
+    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:")) != -1) {
         switch (c) {
             case 'm':
                 ram_size = atol(optarg) << 30;
@@ -1054,6 +1218,13 @@ int main(int argc, char** argv, char **envp) {
             case 'D':
                 handle_logfile(optarg);
                 break;
+            case 'C':
+                sscanf(optarg, "%lx", &check_point_pc);
+                emu_cpu_check_point = true;
+                break;
+            case 'E':
+                sscanf(optarg, "%lx", &load_bios_entry);
+                break;
             case 'g':
 #if !defined (CONFIG_GDB)
                 fprintf(stderr, "please make GDB=1\n");
@@ -1064,6 +1235,10 @@ int main(int argc, char** argv, char **envp) {
             case 'z':
                 determined = 1;
                 break;
+            case 'v':
+                gdb_verbose = true;
+            case 'b':
+                load_bios = true;
             case 'w':
                 hw_ptw = 1;
                 break;
@@ -1123,7 +1298,10 @@ int main(int argc, char** argv, char **envp) {
         exec_path = real_exec_path;
     }
 #else
-    if (!is_directory(kernel_filename)) {
+    if (load_bios) {
+        load_binary(kernel_filename, load_bios_entry);
+        printf("Load BIOS bin at 0x%lx\n", load_bios_entry);
+    } else if (!is_directory(kernel_filename)) {
         load_elf(kernel_filename, &entry_addr);
     }
 
@@ -1134,7 +1312,7 @@ int main(int argc, char** argv, char **envp) {
 
     term.c_lflag &= ~ECHO;
     term.c_lflag &= ~ICANON;
-    term.c_lflag &= ~ISIG;
+    // term.c_lflag &= ~ISIG;
     tcsetattr(STDIN_FILENO, 0, &term);
 
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
@@ -1153,6 +1331,7 @@ int main(int argc, char** argv, char **envp) {
     LoongArchCPU* cpu = aligned_alloc(64, sizeof(LoongArchCPU));
     memset(cpu, 0, sizeof(LoongArchCPU));
     CPUState *cs = CPU(cpu);
+    current_cpu = cs;
     CPULoongArchState* env = &cpu->env;
     cs->env = env;
     cpu_reset(cs);
@@ -1163,7 +1342,10 @@ int main(int argc, char** argv, char **envp) {
     env->timerid = timerid;
     if (serial_plus) {
         qemu_irq irq = qemu_allocate_irq(loongarch_cpu_set_irq, (void*)env, 7);
-        ss = simple_serial_init(0x1fe001e0, irq, 115200);
+
+        // ss = simple_serial_init(0x1fe001e0, irq, 115200);
+        ss = simple_serial_init(0x1FF10000, irq, 115200);
+        ss = simple_serial_init(0x1FE00000, irq, 115200);
 
         struct sigevent sev;
         sev.sigev_notify = SIGEV_SIGNAL;
@@ -1175,7 +1357,7 @@ int main(int argc, char** argv, char **envp) {
         memset(&sa, 0, sizeof(struct sigaction));
         sigemptyset(&sa.sa_mask);
         sa.sa_sigaction = sigaction_entry_serial_timer;
-        sa.sa_flags     = SA_SIGINFO;
+        sa.sa_flags     = SA_SIGINFO | SA_RESTART;
         lsassert (sigaction(SIGRTMIN + 1, &sa, NULL) == 0);
 
         struct itimerspec its;
@@ -1186,7 +1368,10 @@ int main(int argc, char** argv, char **envp) {
         lsassert(timer_settime(serial_timerid, 0, &its, NULL) == 0);
     }
 #endif
-    env->pc = entry_addr;
+    if (load_bios)
+        env->pc = load_bios_entry & 0xffffffff;
+    else
+        env->pc = entry_addr;
 
     if (is_directory(kernel_filename)) {
         restore_checkpoint(env, kernel_filename);
@@ -1301,7 +1486,7 @@ int main(int argc, char** argv, char **envp) {
             sleep(3);
         }
 #endif
-        gdbserver_init(1234);
+        gdbserver_init(1239);
         gdbserver_has_message = 1;
         gdbserver_loop();
 #endif

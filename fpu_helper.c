@@ -13,6 +13,9 @@
 #include "fpu/softfloat.h"
 #include "internals.h"
 
+#define g_assert_not_reached abort
+#define g_assert assert
+
 static inline uint64_t nanbox_s(float32 fp)
 {
     return fp | MAKE_64BIT_MASK(32, 32);

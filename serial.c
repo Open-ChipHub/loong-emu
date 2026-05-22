@@ -136,14 +136,12 @@ void try_read() {
 uint64_t serial_ioport_read(void* opaque, long addr, unsigned size) {
     try_read();
     uint32_t ret = 0;
+    addr &= 7;
     switch (addr) {
     case 0:
         if (s.lcr & UART_LCR_DLAB) {
             ret = (s.divider) & 0Xff;
         } else {
-            if (!input_vaild) {
-                fprintf(stderr, "lxy: %s:%d %s serial read, while input is empty\n", __FILE__,__LINE__,__func__);
-            }
             ret = input;
             input_vaild = false;
         }
@@ -190,6 +188,7 @@ uint64_t serial_ioport_read(void* opaque, long addr, unsigned size) {
 }
 void serial_ioport_write(void* opaque, long addr, uint64_t val, unsigned size) {
     try_read();
+    addr &= 7;
     switch (addr) {
     case 0:
         if (s.lcr & UART_LCR_DLAB) {

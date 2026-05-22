@@ -13,9 +13,10 @@
 #include "sizes.h"
 #include "cpu.h"
 #include "internals.h"
+#include "difftest-ref.h"
 
-#define DUT_TO_REF 0
-#define REF_TO_DUT 1
+#define REF_TO_DUT 0
+#define DUT_TO_REF 1
 
 extern char* ram;
 
@@ -28,25 +29,45 @@ extern uint64_t helper_read_csr(CPULoongArchState *env, int csr_index);
 
 extern const char* const csrnames[];
 
-
 static inline uint8_t* guest_to_host(uint64_t guest_paddr)
 {
     return (uint8_t*)(ram + guest_paddr);
 }
 
+// ── RAM and init ──
+
 static void difftest_init_ram(size_t size)
 {
-    lsassert(ram == NULL);
-
-    ram = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    lsassert(ram != NULL);
-
+    if (ram == NULL) {
+        ram = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        lsassert(ram != NULL);
+    }
 }
 
-void difftest_init(size_t ram_size_bytes)
-{
+static size_t saved_ram_size = 0;
 
-    // TODO : Don't repeat yourself(DRY)
+bool addr_in_ram(hwaddr pa)
+{
+    size_t ram_size_bytes = saved_ram_size;
+    if (ram_size_bytes == 0) {
+        ram_size_bytes = 8UL * 1024 * 1024 * 1024;
+    }
+
+    return pa < ram_size_bytes;
+}
+
+void difftest_set_ramsize(size_t n)
+{
+    saved_ram_size = n;
+}
+
+void difftest_init(void)
+{
+    size_t ram_size_bytes = saved_ram_size;
+    if (ram_size_bytes == 0) {
+        ram_size_bytes = 8UL * 1024 * 1024 * 1024;
+    }
+
     LoongArchCPU* cpu = aligned_alloc(64, sizeof(LoongArchCPU));
     memset(cpu, 0, sizeof(LoongArchCPU));
     CPUState *cs = CPU(cpu);
@@ -62,8 +83,17 @@ void difftest_init(size_t ram_size_bytes)
     difftest_init_ram(ram_size_bytes);
 
     check_level |= CPU_CHECK_TLB_MHIT;
-
 }
+
+void difftest_init_v2(unsigned state_size)
+{
+    (void)state_size;
+    if (ram == NULL) {
+        difftest_init();
+    }
+}
+
+// ── Execution ──
 
 void difftest_exec(uint64_t n)
 {
@@ -80,19 +110,241 @@ static inline void difftest_cpy_helper(void* ref_buf, void* dut_buf, size_t n, b
     }
 }
 
+// ── Memory copy ──
+
 void difftest_memcpy(uint64_t guest_paddr, void* dut_buf, size_t n, bool direction)
 {
     void* ref_buf = (void*)guest_to_host(guest_paddr);
     difftest_cpy_helper(ref_buf, dut_buf, n, direction);
 }
 
+// ── difftest_regcpy: register state copy using la_ref_state_t ──
+// is_fp == false: copy GPRs + CSRs + PC
+// is_fp == true:  copy FPRs + FCSR0 + CF
+
+void difftest_regcpy(void* state, bool is_from_dut, bool is_fp)
+{
+    la_ref_state_t* s = (la_ref_state_t*)state;
+    CPULoongArchState* env = current_env;
+
+    if (is_fp) {
+        difftest_cpy_helper(&env->fpr, &s->frf.value[0], sizeof(env->fpr[0]) * 32, is_from_dut);
+        return;
+    }
+
+    // GPRs
+    difftest_cpy_helper(&env->gpr, &s->xrf.value[0], sizeof(env->gpr[0]) * 32, is_from_dut);
+
+    // PC
+    if (is_from_dut) {
+        env->pc = s->pc;
+    } else {
+        s->pc = env->pc;
+    }
+
+    // CSRs — direct field mapping, no RISC-V translation
+    if (is_from_dut) {
+        env->CSR_CRMD     = s->csr.crmd;
+        env->CSR_PRMD     = s->csr.prmd;
+        env->CSR_EUEN     = s->csr.euen;
+        env->CSR_ECFG     = s->csr.ecfg;
+        env->CSR_ESTAT    = s->csr.estat;
+        env->CSR_ERA      = s->csr.era;
+        env->CSR_BADV     = s->csr.badv;
+        env->CSR_EENTRY   = s->csr.eentry;
+        env->CSR_TLBIDX   = s->csr.tlbidx;
+        env->CSR_TLBEHI   = s->csr.tlbehi;
+        env->CSR_TLBELO0  = s->csr.tlbelo0;
+        env->CSR_TLBELO1  = s->csr.tlbelo1;
+        env->CSR_ASID     = s->csr.asid;
+        env->CSR_PGDL     = s->csr.pgdl;
+        env->CSR_PGDH     = s->csr.pgdh;
+        env->CSR_SAVE[0]  = s->csr.save0;
+        env->CSR_SAVE[1]  = s->csr.save1;
+        env->CSR_SAVE[2]  = s->csr.save2;
+        env->CSR_SAVE[3]  = s->csr.save3;
+        env->CSR_SAVE[4]  = s->csr.save4;
+        env->CSR_SAVE[5]  = s->csr.save5;
+        env->CSR_SAVE[6]  = s->csr.save6;
+        env->CSR_SAVE[7]  = s->csr.save7;
+        env->CSR_TID      = s->csr.tid;
+        env->CSR_TCFG     = s->csr.tcfg;
+        env->CSR_TVAL     = s->csr.tval;
+        env->CSR_TICLR    = s->csr.ticlr;
+        env->CSR_LLBCTL   = s->csr.llbctl;
+        env->CSR_TLBRENTRY = s->csr.tlbrentry;
+        env->CSR_DMW[0]   = s->csr.dmw0;
+        env->CSR_DMW[1]   = s->csr.dmw1;
+        env->CSR_DMW[2]   = s->csr.dmw2;
+        env->CSR_DMW[3]   = s->csr.dmw3;
+    } else {
+        s->csr.crmd       = env->CSR_CRMD;
+        s->csr.prmd       = env->CSR_PRMD;
+        s->csr.euen       = env->CSR_EUEN;
+        s->csr.ecfg       = env->CSR_ECFG;
+        s->csr.estat      = env->CSR_ESTAT;
+        s->csr.era        = env->CSR_ERA;
+        s->csr.badv       = env->CSR_BADV;
+        s->csr.eentry     = env->CSR_EENTRY;
+        s->csr.tlbidx     = env->CSR_TLBIDX;
+        s->csr.tlbehi     = env->CSR_TLBEHI;
+        s->csr.tlbelo0    = env->CSR_TLBELO0;
+        s->csr.tlbelo1    = env->CSR_TLBELO1;
+        s->csr.asid       = env->CSR_ASID;
+        s->csr.pgdl       = env->CSR_PGDL;
+        s->csr.pgdh       = env->CSR_PGDH;
+        s->csr.save0      = env->CSR_SAVE[0];
+        s->csr.save1      = env->CSR_SAVE[1];
+        s->csr.save2      = env->CSR_SAVE[2];
+        s->csr.save3      = env->CSR_SAVE[3];
+        s->csr.save4      = env->CSR_SAVE[4];
+        s->csr.save5      = env->CSR_SAVE[5];
+        s->csr.save6      = env->CSR_SAVE[6];
+        s->csr.save7      = env->CSR_SAVE[7];
+        s->csr.tid        = env->CSR_TID;
+        s->csr.tcfg       = env->CSR_TCFG;
+        s->csr.tval       = env->CSR_TVAL;
+        s->csr.ticlr      = env->CSR_TICLR;
+        s->csr.llbctl     = env->CSR_LLBCTL;
+        s->csr.tlbrentry  = env->CSR_TLBRENTRY;
+        s->csr.dmw0       = env->CSR_DMW[0];
+        s->csr.dmw1       = env->CSR_DMW[1];
+        s->csr.dmw2       = env->CSR_DMW[2];
+        s->csr.dmw3       = env->CSR_DMW[3];
+    }
+}
+
+// ── difftest_csrcpy: CSR-only state copy ──
+
+void difftest_csrcpy(void* state, bool is_from_dut)
+{
+    la_ref_state_t* s = (la_ref_state_t*)state;
+    CPULoongArchState* env = current_env;
+
+    if (is_from_dut) {
+        env->CSR_CRMD     = s->csr.crmd;
+        env->CSR_PRMD     = s->csr.prmd;
+        env->CSR_EUEN     = s->csr.euen;
+        env->CSR_ECFG     = s->csr.ecfg;
+        env->CSR_ESTAT    = s->csr.estat;
+        env->CSR_ERA      = s->csr.era;
+        env->CSR_BADV     = s->csr.badv;
+        env->CSR_EENTRY   = s->csr.eentry;
+        env->CSR_TLBIDX   = s->csr.tlbidx;
+        env->CSR_TLBEHI   = s->csr.tlbehi;
+        env->CSR_TLBELO0  = s->csr.tlbelo0;
+        env->CSR_TLBELO1  = s->csr.tlbelo1;
+        env->CSR_ASID     = s->csr.asid;
+        env->CSR_PGDL     = s->csr.pgdl;
+        env->CSR_PGDH     = s->csr.pgdh;
+        env->CSR_SAVE[0]  = s->csr.save0;
+        env->CSR_SAVE[1]  = s->csr.save1;
+        env->CSR_SAVE[2]  = s->csr.save2;
+        env->CSR_SAVE[3]  = s->csr.save3;
+        env->CSR_SAVE[4]  = s->csr.save4;
+        env->CSR_SAVE[5]  = s->csr.save5;
+        env->CSR_SAVE[6]  = s->csr.save6;
+        env->CSR_SAVE[7]  = s->csr.save7;
+        env->CSR_TID      = s->csr.tid;
+        env->CSR_TCFG     = s->csr.tcfg;
+        env->CSR_TVAL     = s->csr.tval;
+        env->CSR_TICLR    = s->csr.ticlr;
+        env->CSR_LLBCTL   = s->csr.llbctl;
+        env->CSR_TLBRENTRY = s->csr.tlbrentry;
+        env->CSR_DMW[0]   = s->csr.dmw0;
+        env->CSR_DMW[1]   = s->csr.dmw1;
+        env->CSR_DMW[2]   = s->csr.dmw2;
+        env->CSR_DMW[3]   = s->csr.dmw3;
+    } else {
+        s->csr.crmd       = env->CSR_CRMD;
+        s->csr.prmd       = env->CSR_PRMD;
+        s->csr.euen       = env->CSR_EUEN;
+        s->csr.ecfg       = env->CSR_ECFG;
+        s->csr.estat      = env->CSR_ESTAT;
+        s->csr.era        = env->CSR_ERA;
+        s->csr.badv       = env->CSR_BADV;
+        s->csr.eentry     = env->CSR_EENTRY;
+        s->csr.tlbidx     = env->CSR_TLBIDX;
+        s->csr.tlbehi     = env->CSR_TLBEHI;
+        s->csr.tlbelo0    = env->CSR_TLBELO0;
+        s->csr.tlbelo1    = env->CSR_TLBELO1;
+        s->csr.asid       = env->CSR_ASID;
+        s->csr.pgdl       = env->CSR_PGDL;
+        s->csr.pgdh       = env->CSR_PGDH;
+        s->csr.save0      = env->CSR_SAVE[0];
+        s->csr.save1      = env->CSR_SAVE[1];
+        s->csr.save2      = env->CSR_SAVE[2];
+        s->csr.save3      = env->CSR_SAVE[3];
+        s->csr.save4      = env->CSR_SAVE[4];
+        s->csr.save5      = env->CSR_SAVE[5];
+        s->csr.save6      = env->CSR_SAVE[6];
+        s->csr.save7      = env->CSR_SAVE[7];
+        s->csr.tid        = env->CSR_TID;
+        s->csr.tcfg       = env->CSR_TCFG;
+        s->csr.tval       = env->CSR_TVAL;
+        s->csr.ticlr      = env->CSR_TICLR;
+        s->csr.llbctl     = env->CSR_LLBCTL;
+        s->csr.tlbrentry  = env->CSR_TLBRENTRY;
+        s->csr.dmw0       = env->CSR_DMW[0];
+        s->csr.dmw1       = env->CSR_DMW[1];
+        s->csr.dmw2       = env->CSR_DMW[2];
+        s->csr.dmw3       = env->CSR_DMW[3];
+    }
+}
+
+// ── difftest_display ──
+
+void difftest_display(void)
+{
+    CPULoongArchState* env = current_env;
+    fprintf(stderr, "── LoongArch64 REF State ──\n");
+    fprintf(stderr, "PC = 0x%016lx  insn = 0x%08x\n", env->prev_pc, env->insn);
+    for (int i = 0; i < 32; i++) {
+        fprintf(stderr, "  %3s = 0x%016lx%s",
+                regnames[i], env->gpr[i], (i % 4 == 3) ? "\n" : "");
+    }
+    fprintf(stderr, "CRMD=0x%016lx PRMD=0x%016lx EUEN=0x%016lx\n",
+            env->CSR_CRMD, env->CSR_PRMD, env->CSR_EUEN);
+    fprintf(stderr, "ECFG=0x%016lx ESTAT=0x%016lx ERA=0x%016lx\n",
+            env->CSR_ECFG, env->CSR_ESTAT, env->CSR_ERA);
+    fprintf(stderr, "BADV=0x%016lx EENTRY=0x%016lx\n",
+            env->CSR_BADV, env->CSR_EENTRY);
+    fprintf(stderr, "PGDL=0x%016lx PGDH=0x%016lx ASID=0x%016lx\n",
+            env->CSR_PGDL, env->CSR_PGDH, env->CSR_ASID);
+    fprintf(stderr, "DMW0=0x%016lx DMW1=0x%016lx\n",
+            env->CSR_DMW[0], env->CSR_DMW[1]);
+}
+
+// ── Other difftest API ──
+
+void update_dynamic_config(void* config)
+{
+    (void)config;
+}
+
+void difftest_uarchstatus_sync(void* status)
+{
+    (void)status;
+}
+
+int difftest_store_commit(uint64_t* addr, uint64_t* data, uint8_t* mask)
+{
+    (void)addr; (void)data; (void)mask;
+    return 0;
+}
+
+void difftest_raise_intr(uint64_t intr_num)
+{
+    CPULoongArchState* env = current_env;
+    env->CSR_ESTAT |= (1ULL << (intr_num & 0xf));
+    loongarch_cpu_check_irq(env);
+}
+
+// ── Fine-grained helpers ──
 
 void difftest_gprcpy(void* dut_buf, bool direction)
 {
-    void* gpr_base_addr = (void*)(&current_env->gpr);
-    size_t gpr_size = sizeof(current_env->gpr[0]) * 32;
-
-    difftest_cpy_helper(gpr_base_addr, dut_buf, gpr_size, direction);
+    difftest_cpy_helper(&current_env->gpr, dut_buf, sizeof(current_env->gpr[0]) * 32, direction);
 }
 
 void difftest_gprcpy_idx(int gpr_idx, uint64_t* dut_buf, bool direction)
@@ -121,33 +373,23 @@ void difftest_insncpy(uint32_t* dut_buf)
 
 void difftest_fprcpy(void* dut_buf, bool direction)
 {
-    void* fpr_base_addr = (void*)(&current_env->fpr);
-    size_t fpr_size = sizeof(current_env->fpr[0]) * 32;
-
-    difftest_cpy_helper(fpr_base_addr, dut_buf, fpr_size, direction);
+    difftest_cpy_helper(&current_env->fpr, dut_buf, sizeof(current_env->fpr[0]) * 32, direction);
 }
 
 void difftest_fprcpy_idx(int fpr_idx, void* dut_buf, bool direction)
 {
     assert(fpr_idx >= 0 && fpr_idx <= 31);
-    void* fpr_base_addr = (void*)(&current_env->fpr[fpr_idx]);
-    size_t fpr_size = sizeof(current_env->fpr[0]);
-
-    difftest_cpy_helper(fpr_base_addr, dut_buf, fpr_size, direction);
+    difftest_cpy_helper(&current_env->fpr[fpr_idx], dut_buf, sizeof(current_env->fpr[0]), direction);
 }
 
 void difftest_cfcpy(void* dut_buf, bool direction)
 {
-    void* cf_base_addr = &current_env->cf;
-    size_t cf_size = sizeof(current_env->cf[0]) * 8;
-
-    difftest_cpy_helper(cf_base_addr, dut_buf, cf_size, direction);
+    difftest_cpy_helper(&current_env->cf, dut_buf, sizeof(current_env->cf[0]) * 8, direction);
 }
 
 void difftest_cfcpy_idx(int cf_idx, uint8_t* dut_buf, bool direction)
 {
     assert(cf_idx >= 0 && cf_idx <= 7);
-
     if (direction == DUT_TO_REF) {
         current_env->cf[cf_idx] = *dut_buf;
     } else {
@@ -164,7 +406,7 @@ void difftest_fcsr0cpy(uint32_t* dut_buf, bool direction)
     }
 }
 
-#define CSR_CPY_HELPER(CSR)             \
+#define CSR_CPY_HELPER(CSR) \
     case LOONGARCH_CSR_ ## CSR : csr_base_addr = &(current_env->CSR_ ## CSR); break;
 
 void difftest_csrcpy_idx(int csr_idx, uint64_t* dut_buf, uint64_t mask, bool direction)
@@ -241,7 +483,6 @@ void difftest_csrcpy_idx(int csr_idx, uint64_t* dut_buf, uint64_t mask, bool dir
     }
 
     *csr_base_addr = (*csr_base_addr & ~mask) | (*dut_buf & mask);
-
 }
 
 void difftest_tlbcpy()

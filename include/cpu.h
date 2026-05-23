@@ -813,6 +813,16 @@ static inline void laemu_exit(int64_t status) {
         plugin_ops->emu_stop();
     }
 #endif
+#if !defined(CONFIG_CLI) && !defined(CONFIG_PLUGIN)
+    extern void restore_terminal(void);
+    restore_terminal();
+#endif
+
+    extern void insn_stats_report(const char *, void *);
+    extern char *report_filename;
+    extern __thread CPULoongArchState *current_env;
+    if (report_filename && report_filename[0])
+        insn_stats_report(report_filename, current_env);
     exit(status);
 }
 

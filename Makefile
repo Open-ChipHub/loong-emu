@@ -63,11 +63,11 @@ endif
 BUILD_DIR := ./build
 SRC_DIRS := ./
 
-USER_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/syscall/syscall.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/checkpoint/checkpoint.c ${DIFF_NET_SOURCES}
+USER_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/syscall/syscall.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/checkpoint/checkpoint.c src/core/insn_stats.c ${DIFF_NET_SOURCES}
 USER_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_user.o,$(USER_SOURCES)))
 USER_DEPS := $(USER_OBJS:.o=.d)
 
-KERNEL_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c  src/mmu/tlb_helper.c src/core/cpu_helper.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/devices/serial.c src/devices/serial_plus.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/devices/fifo.c src/checkpoint/checkpoint.c ${DIFF_NET_SOURCES}
+KERNEL_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c  src/mmu/tlb_helper.c src/core/cpu_helper.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/devices/serial.c src/devices/serial_plus.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/devices/fifo.c src/checkpoint/checkpoint.c src/core/insn_stats.c ${DIFF_NET_SOURCES}
 KERNEL_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_kernel.o,$(KERNEL_SOURCES)))
 KERNEL_DEPS := $(KERNEL_OBJS:.o=.d)
 

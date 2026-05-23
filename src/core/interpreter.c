@@ -7,6 +7,7 @@
 #if defined(CONFIG_USER_ONLY)
 #include "user.h"
 #endif
+#include "insn_stats.h"
 
 #include "util.h"
 
@@ -4877,6 +4878,8 @@ gen_trans_vvvd(xvsubwod_w_hu, 32, vsubwod_w_hu)
 
 /* Decode and execute a single instruction. Returns true on success. Uses icache to skip re-decoding. */
 bool interpreter(CPULoongArchState *env, uint32_t insn, INSCache* ic) {
+    insn_stats_classify_and_record(insn);
+
     if (ic) {
         ic->trans_func(env, ic->arg);
         env->gpr[0] = 0;

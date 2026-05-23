@@ -175,7 +175,8 @@ def mode_emu(args):
         print(f"ERROR: binary not found: {binary}")
         sys.exit(1)
 
-    cmd = [EMU_PATH, "-z", "-k", binary, "-b", "-E", args.addr, "-N", str(args.port)]
+    cmd = [EMU_PATH, "-z", "-k", binary, "-b", "-E", args.addr, "-N", str(args.port),
+           "-R", args.report]
 
     print(f"=== Diffnet: emu mode ===")
     print(f"  emu:   {EMU_PATH}")
@@ -271,6 +272,51 @@ def mode_step(args):
     return 0
 
 
+# ─── Stats mode — instruction stats report via emu ──────────────
+
+def mode_stats(args):
+    """Run emu with instruction stats, no diffnet."""
+    if not os.path.exists(EMU_PATH):
+        print(f"ERROR: emu not built. Run: make DIFF_NET=1 -j")
+        sys.exit(1)
+
+    binary = os.path.abspath(args.binary)
+    if not os.path.exists(binary):
+        print(f"ERROR: binary not found: {binary}")
+        sys.exit(1)
+
+    # Use diffnet auto-spawn to get step limiting (env vars only work with DIFF_NET)
+    cmd = [EMU_PATH, "-z", "-k", binary, "-b", "-E", args.addr,
+           "-R", args.report, "-N", str(DEFAULT_PORT)]
+    env = os.environ.copy()
+    env["DIFFNET_MAX_STEPS"] = str(args.max_cycles)
+    env["DIFFNET_BATCH_SIZE"] = str(args.max_cycles)
+
+    print(f"=== Stats mode ===")
+    print(f"  binary: {binary}")
+    print(f"  max instructions: {args.max_cycles}")
+    print(f"  report: {args.report}")
+    print()
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, env=env)
+    for line in proc.stdout:
+        line = line.rstrip()
+        print(f"  [emu] {line}")
+    proc.wait()
+
+    if os.path.exists(args.report):
+        print(f"\nReport saved to: {args.report}")
+        # Print summary
+        with open(args.report) as f:
+            for line in f:
+                if line.startswith("**Total"):
+                    print(f"  {line.strip()}")
+                elif line.startswith("**Distinct"):
+                    print(f"  {line.strip()}")
+        return 0
+    return 1
+
 # ─── Batch mode — pure Python batch comparison via GDB RSP ──────
 
 def mode_batch(args):
@@ -343,10 +389,20 @@ def main():
     p_emu.add_argument("--port", "-p", type=int, default=DEFAULT_PORT)
     p_emu.add_argument("--max-steps", "-M", type=int, default=70000)
     p_emu.add_argument("--batch-size", "-B", type=int, default=2000)
+    p_emu.add_argument("--report", "-R", default="report_instruction.md",
+                       help="Instruction stats report output (default: report_instruction.md)")
     p_emu.add_argument("--ctxcmp", "-C", default="gpr",
                        help="Comparison categories: gpr,fpr,lsx,lasx,csr,mem,all (default: gpr)")
     p_emu.add_argument("--csr-dump-addr", "-D", default="0x1c000300",
                        help="CSR trampoline code+data base address")
+
+    # stats mode
+    p_stats = sub.add_parser("stats", help="Generate instruction stats report (no diffnet)")
+    p_stats.add_argument("--binary", "-k", required=True, help="Binary to run")
+    p_stats.add_argument("--addr", "-E", default=DEFAULT_ADDR, help="Load address")
+    p_stats.add_argument("--report", "-R", default="report_instruction.md")
+    p_stats.add_argument("--max-cycles", "-M", type=int, default=1000000,
+                         help="Max instruction count (emulator loops forever otherwise)")
 
     # step mode
     p_step = sub.add_parser("step", help="Pure Python step-by-step via GDB RSP")
@@ -369,6 +425,8 @@ def main():
 
     if args.mode == "emu":
         sys.exit(mode_emu(args))
+    elif args.mode == "stats":
+        sys.exit(mode_stats(args))
     elif args.mode == "step":
         sys.exit(mode_step(args))
     elif args.mode == "batch":

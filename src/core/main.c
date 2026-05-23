@@ -30,6 +30,7 @@
 #if defined(CONFIG_DIFF_NET)
 #include "diffnet.h"
 #endif
+#include "insn_stats.h"
 
 #if defined(CONFIG_PLUGIN)
 la_emu_plugin_ops* plugin_ops;
@@ -55,6 +56,23 @@ static int  diffnet_port = -1;
 static bool diffnet_spawn_mode = false;
 #endif
 extern int check_signal;
+char *report_filename = "report_instruction.md";
+
+#if !defined(CONFIG_CLI) && !defined(CONFIG_PLUGIN)
+struct termios saved_termios;
+int saved_stdin_flags;
+bool term_saved;
+
+void restore_terminal(void)
+{
+    if (term_saved) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &saved_termios);
+        fcntl(STDIN_FILENO, F_SETFL, saved_stdin_flags);
+        term_saved = false;
+    }
+}
+#endif
+
 extern int64_t singlestep;
 
 extern void handle_debug_cli(CPULoongArchState *env);
@@ -177,6 +195,7 @@ void usage(void) {
     fprintf(stderr, "-g Enable gdbserver\n");
     fprintf(stderr, "-w Force enable hardware page table walker\n");
     fprintf(stderr, "-N host:port  Enable network difftest against QEMU GDB stub\n");
+    fprintf(stderr, "-R file       Instruction stats report (default: report_instruction.md)\n");
     laemu_exit(EXIT_SUCCESS);
 }
 
@@ -882,6 +901,17 @@ int exec_env(CPULoongArchState *env) {
                 env->icount ++;
                 PERF_INC(COUNTER_INST);
 
+                /* Standalone step limit (no diffnet needed) */
+                {
+                    static int emu_max_inst = -1;
+                    if (emu_max_inst < 0) {
+                        const char *v = getenv("EMU_MAX_INSTRS");
+                        emu_max_inst = v ? atoi(v) : 0;
+                    }
+                    if (emu_max_inst > 0 && env->icount >= emu_max_inst)
+                        laemu_exit(0);
+                }
+
             }
         } else {
             loongarch_cpu_do_interrupt(cs);
@@ -1076,7 +1106,6 @@ void do_io_st(hwaddr ha, uint64_t data, int size) {
         }
         break;    
     case 0x100d0014:
-        fprintf(stderr,"lxy: %s:%d %s poweroff@100d0014 data:%x\n",__FILE__, __LINE__, __FUNCTION__, (int)data);
         if ((data & 0x3c00) == 0x3c00) {
             dump_exec_info(current_env, stderr);
 #if defined(CONFIG_PERF)
@@ -1166,7 +1195,7 @@ int main(int argc, char** argv, char **envp) {
         usage();
     }
     int c;
-    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:N:")) != -1) {
+    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:N:R:")) != -1) {
         switch (c) {
             case 'm':
                 ram_size = atol(optarg) << 30;
@@ -1257,6 +1286,9 @@ int main(int argc, char** argv, char **envp) {
                 laemu_exit(EXIT_FAILURE);
                 break;
 #endif
+            case 'R':
+                report_filename = optarg;
+                break;
             case '?':
                 usage();
                 return 1;
@@ -1265,6 +1297,7 @@ int main(int argc, char** argv, char **envp) {
         }
     }
     setup_signal();
+    insn_stats_init();
 #ifndef CONFIG_USER_ONLY
     ram = alloc_ram(ram_size);
     qemu_log("pid:%d, ram_size:%lx kernel_filename:%s\n", getpid(), ram_size, kernel_filename);
@@ -1297,14 +1330,20 @@ int main(int argc, char** argv, char **envp) {
     }
 
 #if !defined (CONFIG_CLI) && !defined (CONFIG_PLUGIN)
-    struct termios term;
-    tcgetattr(STDIN_FILENO, &term);
+    {
+        extern struct termios saved_termios;
+        extern int saved_stdin_flags;
+        extern bool term_saved;
 
-    term.c_lflag &= ~ECHO;
-    term.c_lflag &= ~ICANON;
-    tcsetattr(STDIN_FILENO, 0, &term);
+        saved_stdin_flags = fcntl(STDIN_FILENO, F_GETFL);
+        tcgetattr(STDIN_FILENO, &saved_termios);
+        term_saved = true;
 
-    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+        struct termios raw = saved_termios;
+        raw.c_lflag &= ~(ECHO | ICANON);
+        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+        fcntl(STDIN_FILENO, F_SETFL, saved_stdin_flags | O_NONBLOCK);
+    }
 #endif
 
     timer_t timerid;

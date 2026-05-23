@@ -19,7 +19,8 @@ enum InsnCategory {
     CAT_BARRIER,           /* Ch3.6 屏障 */
     CAT_OTHER_BASIC,       /* Ch3.7 其他基础 */
     CAT_FLOAT,             /* Ch4   浮点 */
-    CAT_VECTOR,            /* Ch5   向量 (LSX/LASX) */
+    CAT_LSX,               /* Ch5   LSX 向量 */
+    CAT_LASX,              /* Ch5   LASX 向量 */
     CAT_PRIVILEGED,        /* Ch6   特权 */
     CAT_COUNT
 };
@@ -35,7 +36,7 @@ typedef struct {
 
 void insn_stats_init(void);
 void insn_stats_record(const char *name, enum InsnCategory cat);
-void insn_stats_classify_and_record(uint32_t insn);
+void insn_stats_classify_and_record(uint32_t insn, const char *name);
 void insn_stats_report(const char *filename, void *env);
 
 #endif

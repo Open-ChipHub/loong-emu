@@ -45,6 +45,7 @@ typedef struct INSCache {
     bool (*trans_func)(void*, void*);
     int arg[4];
     int insn;
+    const char *name;
 } INSCache;
 
 #define IC_BITS 14
@@ -401,6 +402,7 @@ typedef struct CPUArchState {
 
     uint64_t prev_pc;
     uint32_t insn;
+    const char *last_insn_name;
 
     /* LoongArch CSRs */
     uint64_t CSR_CRMD;
@@ -715,7 +717,7 @@ static inline void cpu_clear_tc(CPULoongArchState *env) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
-static inline void cpu_put_ic(CPULoongArchState *env, bool (*trans_func)(void*, void*), void* arg, int insn) {
+static inline void cpu_put_ic(CPULoongArchState *env, bool (*trans_func)(void*, void*), void* arg, int insn, const char *name) {
     INSCache* ic = &env->inscache[IC_INDEX(env->pc)];
     ic->trans_func = trans_func;
     int* args = (int*)arg;
@@ -724,6 +726,8 @@ static inline void cpu_put_ic(CPULoongArchState *env, bool (*trans_func)(void*, 
     ic->arg[2] = args[2];
     ic->arg[3] = args[3];
     ic->insn = insn;
+    ic->name = name;
+    env->last_insn_name = name;
 }
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop

@@ -4878,15 +4878,17 @@ gen_trans_vvvd(xvsubwod_w_hu, 32, vsubwod_w_hu)
 
 /* Decode and execute a single instruction. Returns true on success. Uses icache to skip re-decoding. */
 bool interpreter(CPULoongArchState *env, uint32_t insn, INSCache* ic) {
-    insn_stats_classify_and_record(insn);
+    env->last_insn_name = NULL;
 
     if (ic) {
         ic->trans_func(env, ic->arg);
         env->gpr[0] = 0;
+        insn_stats_classify_and_record(insn, ic->name);
         return true;
     }
     if (decode(env, insn)) {
         env->gpr[0] = 0;
+        insn_stats_classify_and_record(insn, env->last_insn_name);
         return true;
     } else {
         return false;

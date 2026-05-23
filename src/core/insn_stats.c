@@ -13,7 +13,8 @@ const char *insn_category_names[CAT_COUNT] = {
     [CAT_BARRIER]     = "Barrier (Ch3.6)",
     [CAT_OTHER_BASIC] = "Other Basic (Ch3.7)",
     [CAT_FLOAT]       = "Float (Ch4)",
-    [CAT_VECTOR]      = "Vector LSX/LASX (Ch5)",
+    [CAT_LSX]         = "Vector LSX (Ch5)",
+    [CAT_LASX]        = "Vector LASX (Ch5)",
     [CAT_PRIVILEGED]  = "Privileged (Ch6)",
 };
 
@@ -61,45 +62,63 @@ void insn_stats_record(const char *name, enum InsnCategory cat)
     }
 }
 
-/* ── Classifier — categorize by major opcode (bits 31:26) ────── */
-void insn_stats_classify_and_record(uint32_t insn)
+/* ── Classifier — use name from decoder if available, else hex ── */
+void insn_stats_classify_and_record(uint32_t insn, const char *name)
 {
-    int op6 = (insn >> 26) & 0x3f;
-    char name[16];
+    char buf[32];
     enum InsnCategory cat;
 
-    /* Use hex encoding as universal key — simple, unique, correct */
-    snprintf(name, sizeof(name), "%08x", insn);
+    if (name)
+        snprintf(buf, sizeof(buf), "%s", name);
+    else
+        snprintf(buf, sizeof(buf), "%08x", insn);
 
-    /* Categorize by known opcode ranges */
-    switch (op6) {
-    case 0x00: case 0x01: case 0x02: case 0x03: case 0x04:
-    case 0x08: case 0x09: case 0x0a: case 0x0b: case 0x0c:
-    case 0x0d: case 0x0e: case 0x0f:
-    case 0x10: case 0x11: case 0x12: case 0x13:
-    case 0x14: case 0x15: case 0x16: case 0x17: case 0x18:
-    case 0x34: case 0x35: case 0x36: case 0x37:
-        cat = CAT_ARITH_SHIFT; break;
-    case 0x20: case 0x21: case 0x22: case 0x23:
-    case 0x24: case 0x25: case 0x26: case 0x27:
-    case 0x28: case 0x29: case 0x2a: case 0x2b:
-    case 0x2c: case 0x2d: case 0x2e: case 0x2f:
-        cat = CAT_LOAD_STORE; break;
-    case 0x40: case 0x41: case 0x42: case 0x43:
-    case 0x44: case 0x45: case 0x46: case 0x47:
-    case 0x48: case 0x49: case 0x4a: case 0x4b:
-    case 0x50: case 0x51: case 0x52: case 0x53:
-    case 0x54: case 0x55: case 0x56: case 0x57:
-        cat = CAT_BRANCH; break;
-    case 0x05: case 0x06: case 0x07:
-        cat = CAT_FLOAT; break;
-    case 0x30: case 0x31: case 0x32: case 0x33:
-        cat = CAT_VECTOR; break;
-    default:
-        cat = CAT_OTHER_BASIC; break;
+    /* Categorize: prefer name-based when available, fall back to opcode */
+    if (name) {
+        const char *n = name;
+        /* Float: all f-prefixed (fadd, fsub, flogb, fsqrt, fsel, fld, fst, ...) */
+        if (n[0] == 'f')
+            cat = CAT_FLOAT;
+        /* Vector: v-prefix = LSX, xv-prefix = LASX */
+        else if (n[0] == 'v')
+            cat = CAT_LSX;
+        else if (strncmp(n, "xv", 2) == 0)
+            cat = CAT_LASX;
+        /* Load/store: ld_* / st_* (exclude lddir/ldpte which are privileged) */
+        else if ((strncmp(n, "ld", 2) == 0 && strncmp(n, "ldd", 3) != 0 && strncmp(n, "ldp", 3) != 0) ||
+                 (strncmp(n, "st", 2) == 0) ||
+                 strncmp(n, "ll_", 3) == 0 || strncmp(n, "sc_", 3) == 0 ||
+                 strncmp(n, "lld", 3) == 0 || strncmp(n, "preld", 5) == 0)
+            cat = CAT_LOAD_STORE;
+        /* Branch */
+        else if (strncmp(n, "beq", 3) == 0 || strncmp(n, "bne", 3) == 0 ||
+                 strncmp(n, "blt", 3) == 0 || strncmp(n, "bge", 3) == 0 ||
+                 strncmp(n, "bl", 2) == 0 || n[0] == 'b' ||
+                 strncmp(n, "jirl", 4) == 0)
+            cat = CAT_BRANCH;
+        /* Barrier */
+        else if (strcmp(n, "dbar") == 0 || strcmp(n, "ibar") == 0)
+            cat = CAT_BARRIER;
+        /* Atomic: all am* instructions (amadd, amand, ammax, ammin, amor, amswap, amxor) */
+        else if (strncmp(n, "am", 2) == 0)
+            cat = CAT_ATOMIC;
+        /* Privileged */
+        else if (strncmp(n, "csr", 3) == 0 || strncmp(n, "iocsr", 5) == 0 ||
+                 strncmp(n, "tlb", 3) == 0 || strncmp(n, "ertn", 4) == 0 ||
+                 strcmp(n, "idle") == 0 || strncmp(n, "invtlb", 6) == 0 ||
+                 strncmp(n, "lddir", 5) == 0 || strncmp(n, "ldpte", 5) == 0 ||
+                 strcmp(n, "cacop") == 0 || strcmp(n, "cpucfg") == 0)
+            cat = CAT_PRIVILEGED;
+        else
+            cat = CAT_ARITH_SHIFT;
+    } else {
+        int op6 = (insn >> 26) & 0x3f;
+        if (op6 >= 0x20 && op6 <= 0x2f) cat = CAT_LOAD_STORE;
+        else if (op6 >= 0x40 && op6 <= 0x57) cat = CAT_BRANCH;
+        else cat = CAT_OTHER_BASIC;
     }
 
-    insn_stats_record(name, cat);
+    insn_stats_record(buf, cat);
 }
 
 /* ── Report generation ───────────────────────────────────────── */
@@ -196,30 +215,43 @@ void insn_stats_report(const char *filename, void *env_ptr)
     }
     fprintf(f, "\n*%d distinct instructions executed.*\n\n", rank);
 
-    /* ── Full ISA reference (all instructions, count from dynamic stats) ── */
+    /* ── Full ISA reference, grouped by category, with executed counts ── */
     fprintf(f, "## Complete ISA Reference\n\n");
-    fprintf(f, "> All %lu static ISA instructions from `trans_la.c.inc`.  \n", MASTER_N);
-    fprintf(f, "> **Bold** = executed. Plain = not executed in this run.\n\n");
-    fprintf(f, "| # | Instruction | Category | Count |\n");
-    fprintf(f, "|---|------------|----------|-------|\n");
+    fprintf(f, "> All %lu static ISA instructions grouped by category.  \n", MASTER_N);
+    fprintf(f, "> Count column shows executed count (from dynamic stats).\n\n");
 
-    for (size_t i = 0; i < MASTER_N; i++) {
-        /* Look up count from dynamic stats */
-        uint64_t cnt = 0;
-        for (int j = 0; j < insn_count; j++) {
-            if (strcmp(insns[j].name, master_ref[i].name) == 0) {
-                cnt = insns[j].count;
-                break;
+    int total_refs = 0;
+    for (int c = 0; c < CAT_COUNT; c++) {
+        /* Count entries in this category */
+        int cat_entries = 0, cat_executed = 0;
+        for (size_t i = 0; i < MASTER_N; i++)
+            if (master_ref[i].cat == c) cat_entries++;
+        if (cat_entries == 0) continue;
+
+        fprintf(f, "### %s\n\n", insn_category_names[c]);
+        fprintf(f, "| # | Instruction | Count |\n");
+        fprintf(f, "|---|------------|-------|\n");
+
+        int idx = 0;
+        for (size_t i = 0; i < MASTER_N; i++) {
+            if (master_ref[i].cat != c) continue;
+            idx++;
+            /* Look up count from dynamic stats */
+            uint64_t cnt = 0;
+            for (int j = 0; j < insn_count; j++) {
+                if (strcmp(insns[j].name, master_ref[i].name) == 0) {
+                    cnt = insns[j].count; break;
+                }
+            }
+            if (cnt > 0) {
+                fprintf(f, "| %d | `%s` | **%lu** |\n", idx, master_ref[i].name, cnt);
+                cat_executed++;
+            } else {
+                fprintf(f, "| %d | `%s` | 0 |\n", idx, master_ref[i].name);
             }
         }
-        if (cnt > 0)
-            fprintf(f, "| %zu | `%s` | %s | **%lu** |\n",
-                    i+1, master_ref[i].name,
-                    insn_category_names[master_ref[i].cat], cnt);
-        else
-            fprintf(f, "| %zu | `%s` | %s | 0 |\n",
-                    i+1, master_ref[i].name,
-                    insn_category_names[master_ref[i].cat]);
+        fprintf(f, "\n*%d/%d executed in this category.*\n\n", cat_executed, cat_entries);
+        total_refs += cat_entries;
     }
 
     fclose(f);

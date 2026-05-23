@@ -15,6 +15,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -59,6 +60,16 @@ int diffnet_init(const char *host, int port, CPULoongArchState *env)
         fprintf(stderr, "DIFFNET: synced GPRs from QEMU, QEMU PC=0x%016lx emu PC=0x%016lx\n",
                 qemu_pc, env->pc);
     }
+
+    /* Allow environment overrides */
+    const char *env_val;
+    if ((env_val = getenv("DIFFNET_MAX_STEPS")))
+        diffnet_max_steps = atoi(env_val);
+    if ((env_val = getenv("DIFFNET_BATCH_SIZE")))
+        diffnet_batch_size = atoi(env_val);
+    fprintf(stderr, "DIFFNET: max_steps=%d batch_size=%d\n",
+            diffnet_max_steps, diffnet_batch_size);
+
     return 0;
 }
 

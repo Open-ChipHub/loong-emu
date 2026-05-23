@@ -285,58 +285,42 @@ static bool trans_mulw_d_wu(CPULoongArchState *env, arg_mulw_d_wu *restrict a) {
     return true;
 }
 static bool trans_div_w(CPULoongArchState *env, arg_div_w *restrict a) {
-    int32_t rj = (int32_t)env->gpr[a->rj], rk = (int32_t)env->gpr[a->rk];
-    if (rk == 0) env->gpr[a->rd] = 0;
-    else if (rj == INT32_MIN && rk == -1) env->gpr[a->rd] = (int64_t)(int32_t)rj;
-    else env->gpr[a->rd] = (int64_t)(int32_t)(rj / rk);
+    env->gpr[a->rd] = (int32_t)env->gpr[a->rj] / (int32_t)env->gpr[a->rk];
     env->pc += 4;
     return true;
 }
 static bool trans_mod_w(CPULoongArchState *env, arg_mod_w *restrict a) {
-    int32_t rj = (int32_t)env->gpr[a->rj], rk = (int32_t)env->gpr[a->rk];
-    if (rk == 0) env->gpr[a->rd] = 0;
-    else if (rj == INT32_MIN && rk == -1) env->gpr[a->rd] = 0;
-    else env->gpr[a->rd] = (int64_t)(int32_t)(rj % rk);
+    env->gpr[a->rd] = (int32_t)env->gpr[a->rj] % (int32_t)env->gpr[a->rk];
     env->pc += 4;
     return true;
 }
 static bool trans_div_wu(CPULoongArchState *env, arg_div_wu *restrict a) {
-    uint32_t rj = (uint32_t)env->gpr[a->rj], rk = (uint32_t)env->gpr[a->rk];
-    env->gpr[a->rd] = rk ? (int64_t)(int32_t)(rj / rk) : 0;
+    env->gpr[a->rd] = (int32_t)((uint32_t)env->gpr[a->rj] / (uint32_t)env->gpr[a->rk]);
     env->pc += 4;
     return true;
 }
 static bool trans_mod_wu(CPULoongArchState *env, arg_mod_wu *restrict a) {
-    uint32_t rj = (uint32_t)env->gpr[a->rj], rk = (uint32_t)env->gpr[a->rk];
-    env->gpr[a->rd] = rk ? (int64_t)(int32_t)(rj % rk) : 0;
+    env->gpr[a->rd] = (uint32_t)env->gpr[a->rj] % (uint32_t)env->gpr[a->rk];
     env->pc += 4;
     return true;
 }
 static bool trans_div_d(CPULoongArchState *env, arg_div_d *restrict a) {
-    int64_t rj = (int64_t)env->gpr[a->rj], rk = (int64_t)env->gpr[a->rk];
-    if (rk == 0) env->gpr[a->rd] = 0;
-    else if (rj == INT64_MIN && rk == -1) env->gpr[a->rd] = rj;
-    else env->gpr[a->rd] = rj / rk;
+    env->gpr[a->rd] = (int64_t)env->gpr[a->rj] / (int64_t)env->gpr[a->rk];
     env->pc += 4;
     return true;
 }
 static bool trans_mod_d(CPULoongArchState *env, arg_mod_d *restrict a) {
-    int64_t rj = (int64_t)env->gpr[a->rj], rk = (int64_t)env->gpr[a->rk];
-    if (rk == 0) env->gpr[a->rd] = 0;
-    else if (rj == INT64_MIN && rk == -1) env->gpr[a->rd] = 0;
-    else env->gpr[a->rd] = rj % rk;
+    env->gpr[a->rd] = (int64_t)env->gpr[a->rj] % (int64_t)env->gpr[a->rk];
     env->pc += 4;
     return true;
 }
 static bool trans_div_du(CPULoongArchState *env, arg_div_du *restrict a) {
-    uint64_t rj = env->gpr[a->rj], rk = env->gpr[a->rk];
-    env->gpr[a->rd] = rk ? rj / rk : 0;
+    env->gpr[a->rd] = (uint64_t)env->gpr[a->rj] / (uint64_t)env->gpr[a->rk];
     env->pc += 4;
     return true;
 }
 static bool trans_mod_du(CPULoongArchState *env, arg_mod_du *restrict a) {
-    uint64_t rj = env->gpr[a->rj], rk = env->gpr[a->rk];
-    env->gpr[a->rd] = rk ? rj % rk : 0;
+    env->gpr[a->rd] = (uint64_t)env->gpr[a->rj] % (uint64_t)env->gpr[a->rk];
     env->pc += 4;
     return true;
 }
@@ -1078,89 +1062,22 @@ static bool trans_stptr_d(CPULoongArchState *env, arg_stptr_d *restrict a) {
     env->pc += 4;
     return true;
 }
-/* Load/Store with boundary check: ldgt/ldle/stgt/stle.
- * Conditionally perform load/store based on signed comparison of rj vs rk.
- * gt: rj > rk, le: rj <= rk. */
-static bool trans_ldgt_b(CPULoongArchState *env, arg_ldgt_b *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = (int64_t)ld_b(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_ldgt_h(CPULoongArchState *env, arg_ldgt_h *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = (int64_t)ld_h(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_ldgt_w(CPULoongArchState *env, arg_ldgt_w *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = (int64_t)ld_w(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_ldgt_d(CPULoongArchState *env, arg_ldgt_d *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = ld_d(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_ldle_b(CPULoongArchState *env, arg_ldle_b *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = (int64_t)ld_b(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_ldle_h(CPULoongArchState *env, arg_ldle_h *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = (int64_t)ld_h(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_ldle_w(CPULoongArchState *env, arg_ldle_w *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = (int64_t)ld_w(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_ldle_d(CPULoongArchState *env, arg_ldle_d *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        env->gpr[a->rd] = ld_d(env, env->gpr[a->rj]);
-    env->pc += 4; return true;
-}
-static bool trans_stgt_b(CPULoongArchState *env, arg_stgt_b *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_b(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
-static bool trans_stgt_h(CPULoongArchState *env, arg_stgt_h *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_h(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
-static bool trans_stgt_w(CPULoongArchState *env, arg_stgt_w *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_w(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
-static bool trans_stgt_d(CPULoongArchState *env, arg_stgt_d *restrict a) {
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_d(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
-static bool trans_stle_b(CPULoongArchState *env, arg_stle_b *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_b(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
-static bool trans_stle_h(CPULoongArchState *env, arg_stle_h *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_h(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
-static bool trans_stle_w(CPULoongArchState *env, arg_stle_w *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_w(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
-static bool trans_stle_d(CPULoongArchState *env, arg_stle_d *restrict a) {
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_d(env, env->gpr[a->rj], env->gpr[a->rd]);
-    env->pc += 4; return true;
-}
+static bool trans_ldgt_b(CPULoongArchState *env, arg_ldgt_b *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_ldgt_h(CPULoongArchState *env, arg_ldgt_h *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_ldgt_w(CPULoongArchState *env, arg_ldgt_w *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_ldgt_d(CPULoongArchState *env, arg_ldgt_d *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_ldle_b(CPULoongArchState *env, arg_ldle_b *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_ldle_h(CPULoongArchState *env, arg_ldle_h *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_ldle_w(CPULoongArchState *env, arg_ldle_w *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_ldle_d(CPULoongArchState *env, arg_ldle_d *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stgt_b(CPULoongArchState *env, arg_stgt_b *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stgt_h(CPULoongArchState *env, arg_stgt_h *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stgt_w(CPULoongArchState *env, arg_stgt_w *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stgt_d(CPULoongArchState *env, arg_stgt_d *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stle_b(CPULoongArchState *env, arg_stle_b *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stle_h(CPULoongArchState *env, arg_stle_h *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stle_w(CPULoongArchState *env, arg_stle_w *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_stle_d(CPULoongArchState *env, arg_stle_d *restrict a) {__NOT_IMPLEMENTED__}
 static bool trans_ll_w(CPULoongArchState *env, arg_ll_w *restrict a) {
     hwaddr ha = load_pa(env, env->gpr[a->rj] + a->imm);
     env->gpr[a->rd] = ram_ldw(ha);
@@ -1875,7 +1792,7 @@ static bool trans_movgr2fcsr(CPULoongArchState *env, arg_movgr2fcsr *restrict a)
     if (mask == UINT32_MAX) {
         env->fcsr0 = rj;
     } else {
-        env->fcsr0 = (env->fcsr0 & ~mask) | (rj & mask);
+        __NOT_IMPLEMENTED__;
     }
 
     if (mask & FCSR0_M3) {
@@ -1962,54 +1879,14 @@ static bool trans_fstx_d(CPULoongArchState *env, arg_fstx_d *restrict a) {
     env->pc += 4;
     return true;
 }
-static bool trans_fldgt_s(CPULoongArchState *env, arg_fldgt_s *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_w(env, env->gpr[a->rj]));
-    env->pc += 4; return true;
-}
-static bool trans_fldgt_d(CPULoongArchState *env, arg_fldgt_d *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_d(env, env->gpr[a->rj]));
-    env->pc += 4; return true;
-}
-static bool trans_fldle_s(CPULoongArchState *env, arg_fldle_s *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_w(env, env->gpr[a->rj]));
-    env->pc += 4; return true;
-}
-static bool trans_fldle_d(CPULoongArchState *env, arg_fldle_d *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_d(env, env->gpr[a->rj]));
-    env->pc += 4; return true;
-}
-static bool trans_fstgt_s(CPULoongArchState *env, arg_fstgt_s *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_w(env, env->gpr[a->rj], env->fpr[a->fd].vreg.W[0]);
-    env->pc += 4; return true;
-}
-static bool trans_fstgt_d(CPULoongArchState *env, arg_fstgt_d *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_d(env, env->gpr[a->rj], env->fpr[a->fd].vreg.D[0]);
-    env->pc += 4; return true;
-}
-static bool trans_fstle_s(CPULoongArchState *env, arg_fstle_s *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_w(env, env->gpr[a->rj], env->fpr[a->fd].vreg.W[0]);
-    env->pc += 4; return true;
-}
-static bool trans_fstle_d(CPULoongArchState *env, arg_fstle_d *restrict a) {
-    CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_d(env, env->gpr[a->rj], env->fpr[a->fd].vreg.D[0]);
-    env->pc += 4; return true;
-}
+static bool trans_fldgt_s(CPULoongArchState *env, arg_fldgt_s *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_fldgt_d(CPULoongArchState *env, arg_fldgt_d *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_fldle_s(CPULoongArchState *env, arg_fldle_s *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_fldle_d(CPULoongArchState *env, arg_fldle_d *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_fstgt_s(CPULoongArchState *env, arg_fstgt_s *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_fstgt_d(CPULoongArchState *env, arg_fstgt_d *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_fstle_s(CPULoongArchState *env, arg_fstle_s *restrict a) {__NOT_IMPLEMENTED__}
+static bool trans_fstle_d(CPULoongArchState *env, arg_fstle_d *restrict a) {__NOT_IMPLEMENTED__}
 static bool trans_beqz(CPULoongArchState *env, arg_beqz *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
     if ((int64_t)env->gpr[a->rj] == 0) {
@@ -2452,17 +2329,11 @@ static bool trans_tlbfill(CPULoongArchState *env, arg_tlbfill *restrict a) {
 }
 static bool trans_tlbclr(CPULoongArchState *env, arg_tlbclr *restrict a) {
     CHECK_PLV(0);
-    helper_tlbclr(env);
-    cpu_clear_tc(env);
-    env->pc += 4;
-    return true;
+    __NOT_IMPLEMENTED__
 }
 static bool trans_tlbflush(CPULoongArchState *env, arg_tlbflush *restrict a) {
     CHECK_PLV(0);
-    helper_tlbflush(env);
-    cpu_clear_tc(env);
-    env->pc += 4;
-    return true;
+    __NOT_IMPLEMENTED__
 }
 static bool trans_invtlb(CPULoongArchState *env, arg_invtlb *restrict a) {
     CHECK_PLV(0);
@@ -2514,9 +2385,7 @@ static bool trans_idle(CPULoongArchState *env, arg_idle *restrict a) {
 }
 static bool trans_dbcl(CPULoongArchState *env, arg_dbcl *restrict a) {
     CHECK_PLV(0);
-    env->CSR_DBG = FIELD_DP64(env->CSR_DBG, CSR_DBG, DST, 0);
-    env->pc += 4;
-    return true;
+    __NOT_IMPLEMENTED__
 }
 #endif
 

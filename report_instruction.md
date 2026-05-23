@@ -1,6 +1,6 @@
 # Emu Instruction Execution Report
 
-**Total instructions executed**: 501  
+**Total instructions executed**: 300  
 **Distinct executed**: 11 / 1690 static ISA  
 
 ## Exceptions & Interrupts
@@ -18,24 +18,24 @@
 
 | Category | Count | % |
 |----------|-------|----|
-| Arithmetic/Shift (Ch3.1) | 456 | 91.02% |
-| Branch/Jump (Ch3.3) | 45 | 8.98% |
+| Arithmetic/Shift (Ch3.1) | 274 | 91.33% |
+| Branch/Jump (Ch3.3) | 26 | 8.67% |
 
 ## Executed Instructions
 
 | # | Instruction | Category | Count | % |
 |---|------------|----------|-------|----|
-| 1 | `add_w` | Arithmetic/Shift (Ch3.1) | **91** | **18.16%** |
-| 2 | `addi_w` | Arithmetic/Shift (Ch3.1) | **91** | **18.16%** |
-| 3 | `and` | Arithmetic/Shift (Ch3.1) | **45** | **8.98%** |
-| 4 | `lu12i_w` | Arithmetic/Shift (Ch3.1) | **1** | **0.20%** |
-| 5 | `or` | Arithmetic/Shift (Ch3.1) | **45** | **8.98%** |
-| 6 | `ori` | Arithmetic/Shift (Ch3.1) | **3** | **0.60%** |
-| 7 | `slli_w` | Arithmetic/Shift (Ch3.1) | **45** | **8.98%** |
-| 8 | `srli_w` | Arithmetic/Shift (Ch3.1) | **45** | **8.98%** |
-| 9 | `sub_w` | Arithmetic/Shift (Ch3.1) | **45** | **8.98%** |
-| 10 | `xor` | Arithmetic/Shift (Ch3.1) | **45** | **8.98%** |
-| 11 | `blt` | Branch/Jump (Ch3.3) | **45** | **8.98%** |
+| 1 | `add_w` | Arithmetic/Shift (Ch3.1) | **54** | **18.00%** |
+| 2 | `addi_w` | Arithmetic/Shift (Ch3.1) | **54** | **18.00%** |
+| 3 | `and` | Arithmetic/Shift (Ch3.1) | **27** | **9.00%** |
+| 4 | `lu12i_w` | Arithmetic/Shift (Ch3.1) | **1** | **0.33%** |
+| 5 | `or` | Arithmetic/Shift (Ch3.1) | **27** | **9.00%** |
+| 6 | `ori` | Arithmetic/Shift (Ch3.1) | **3** | **1.00%** |
+| 7 | `slli_w` | Arithmetic/Shift (Ch3.1) | **27** | **9.00%** |
+| 8 | `srli_w` | Arithmetic/Shift (Ch3.1) | **27** | **9.00%** |
+| 9 | `sub_w` | Arithmetic/Shift (Ch3.1) | **27** | **9.00%** |
+| 10 | `xor` | Arithmetic/Shift (Ch3.1) | **27** | **9.00%** |
+| 11 | `blt` | Branch/Jump (Ch3.3) | **26** | **8.67%** |
 
 *11 distinct instructions executed.*
 
@@ -49,14 +49,14 @@
 | # | Instruction | Count |
 |---|------------|-------|
 | 1 | `add_d` | 0 |
-| 2 | `add_w` | **91** |
+| 2 | `add_w` | **54** |
 | 3 | `addi_d` | 0 |
-| 4 | `addi_w` | **91** |
+| 4 | `addi_w` | **54** |
 | 5 | `addu16i_d` | 0 |
 | 6 | `alsl_d` | 0 |
 | 7 | `alsl_w` | 0 |
 | 8 | `alsl_wu` | 0 |
-| 9 | `and` | **45** |
+| 9 | `and` | **27** |
 | 10 | `andi` | 0 |
 | 11 | `andn` | 0 |
 | 12 | `asrtgt_d` | 0 |
@@ -127,7 +127,7 @@
 | 77 | `mulw_d_w` | 0 |
 | 78 | `mulw_d_wu` | 0 |
 | 79 | `nor` | 0 |
-| 80 | `or` | **45** |
+| 80 | `or` | **27** |
 | 81 | `ori` | **3** |
 | 82 | `orn` | 0 |
 | 83 | `pcaddi` | 0 |
@@ -150,7 +150,7 @@
 | 100 | `sll_d` | 0 |
 | 101 | `sll_w` | 0 |
 | 102 | `slli_d` | 0 |
-| 103 | `slli_w` | **45** |
+| 103 | `slli_w` | **27** |
 | 104 | `slt` | 0 |
 | 105 | `slti` | 0 |
 | 106 | `sltu` | 0 |
@@ -162,11 +162,11 @@
 | 112 | `srl_d` | 0 |
 | 113 | `srl_w` | 0 |
 | 114 | `srli_d` | 0 |
-| 115 | `srli_w` | **45** |
+| 115 | `srli_w` | **27** |
 | 116 | `sub_d` | 0 |
-| 117 | `sub_w` | **45** |
+| 117 | `sub_w` | **27** |
 | 118 | `syscall` | 0 |
-| 119 | `xor` | **45** |
+| 119 | `xor` | **27** |
 | 120 | `xori` | 0 |
 
 *10/120 executed in this category.*
@@ -183,7 +183,7 @@
 | 6 | `bge` | 0 |
 | 7 | `bgeu` | 0 |
 | 8 | `bl` | 0 |
-| 9 | `blt` | **45** |
+| 9 | `blt` | **26** |
 | 10 | `bltu` | 0 |
 | 11 | `bne` | 0 |
 | 12 | `bnez` | 0 |

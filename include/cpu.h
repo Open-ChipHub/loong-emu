@@ -593,9 +593,18 @@ static inline bool is_la64(CPULoongArchState *env)
     return FIELD_EX32(env->cpucfg[1], CPUCFG1, ARCH) == CPUCFG1_ARCH_LA64;
 }
 
+static inline bool is_la32(CPULoongArchState *env)
+{
+    return FIELD_EX32(env->cpucfg[1], CPUCFG1, ARCH) == CPUCFG1_ARCH_LA32;
+}
+
+static inline bool is_la32r(CPULoongArchState *env)
+{
+    return FIELD_EX32(env->cpucfg[1], CPUCFG1, ARCH) == CPUCFG1_ARCH_LA32R;
+}
+
 static inline bool is_va32(CPULoongArchState *env)
 {
-    /* VA32 if !LA64 or VA32L[1-3] */
     bool va32 = !is_la64(env);
     uint64_t plv = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV);
     if (plv >= 1 && (FIELD_EX64(env->CSR_MISC, CSR_MISC, VA32) & (1 << plv))) {
@@ -611,6 +620,11 @@ static inline void set_pc(CPULoongArchState *env, uint64_t value)
     } else {
         env->pc = value;
     }
+}
+
+static inline bool avail_la64(CPULoongArchState *env)
+{
+    return is_la64(env);
 }
 
 /*
@@ -799,6 +813,8 @@ bool loongarch_cpu_has_irq(CPULoongArchState *env);
 void loongarch_la464_initfn(CPULoongArchState* env);
 void loongarch_centaur320_initfn(CPULoongArchState* env);
 void loongarch_openc910_initfn(CPULoongArchState* env);
+void loongarch_la32r_initfn(CPULoongArchState* env);
+void loongarch_la32s_initfn(CPULoongArchState* env);
 
 static inline bool enable_hw_ptw(CPULoongArchState* env) {
     return hw_ptw ||

@@ -29,6 +29,7 @@ int diffnet_cmp_mask = CMP_GPR;
 static qrsp_conn_t g_qrsp;
 static pid_t g_child_pid = 0;
 static uint64_t g_batch_count;
+static int g_reg_bytes = 8;  /* 8 for LA64, 4 for LA32 */
 
 /* Pre-assembled CSR dump blob (tools/dump_csr.S).
  * Writes 22 CSRs to memory at address in $t0, uses $t1 as scratch.
@@ -193,15 +194,35 @@ int diffnet_init(const char *host, int port, CPULoongArchState *env)
     }
     fprintf(stderr, "DIFFNET: Connected to QEMU at %s:%d\n", host, port);
 
-    /* Sync emu's initial GPRs from QEMU (QEMU virt machine may set some regs).
-     * Don't sync PC — both should be at the same entry point. */
+    /* Sync emu's initial GPRs from QEMU. Detect register size from g-packet. */
     uint8_t reg_buf[280];
     if (qrsp_read_g_packet(&g_qrsp, reg_buf, sizeof(reg_buf)) == 0) {
+        /* Detect LA32 vs LA64: check if upper half of buffer is all zeros.
+         * LA32 returns 140 bytes (35×4), LA64 returns 280 bytes (35×8). */
+        int zero = 1;
+        for (int i = 140; i < 280; i++)
+            if (reg_buf[i]) { zero = 0; break; }
+        g_reg_bytes = zero ? 4 : 8;
+        fprintf(stderr, "DIFFNET: detected %d-byte registers\n", g_reg_bytes);
+
         const uint8_t *bin = reg_buf;
         for (int i = 0; i < 32; i++) {
-            env->gpr[i] = reg_from_bin(bin + i * 8);
+            if (g_reg_bytes == 4) {
+                uint32_t v32 = (uint32_t)bin[i*4] | ((uint32_t)bin[i*4+1] << 8) |
+                               ((uint32_t)bin[i*4+2] << 16) | ((uint32_t)bin[i*4+3] << 24);
+                env->gpr[i] = (uint64_t)(int64_t)(int32_t)v32;
+            } else {
+                env->gpr[i] = reg_from_bin(bin + i * 8);
+            }
         }
-        uint64_t qemu_pc = reg_from_bin(bin + 33 * 8);
+        uint64_t qemu_pc;
+        if (g_reg_bytes == 4) {
+            uint32_t v32 = (uint32_t)bin[33*4] | ((uint32_t)bin[33*4+1] << 8) |
+                           ((uint32_t)bin[33*4+2] << 16) | ((uint32_t)bin[33*4+3] << 24);
+            qemu_pc = (uint64_t)(int32_t)v32;
+        } else {
+            qemu_pc = reg_from_bin(bin + 33 * 8);
+        }
         fprintf(stderr, "DIFFNET: synced GPRs from QEMU, QEMU PC=0x%016lx emu PC=0x%016lx\n",
                 qemu_pc, env->pc);
     }
@@ -239,7 +260,7 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
 
 #define CMP_HDR() do { \
     if (mismatch == 0) { \
-        uint64_t _pc = reg_from_bin(g_bin + 33 * 8); \
+        uint64_t _pc = reg_from_bin(g_bin + 33 * g_reg_bytes); \
         fprintf(stderr, "\n=== MISMATCH batch=%ld icount=%ld prev_pc=0x%016lx qemu_pc=0x%016lx ===\n", \
                 g_batch_count, env->icount, env->prev_pc, _pc); \
     } \
@@ -247,7 +268,14 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
 
     /* ---- 1. GPRs (r0-r31) + PC (always compared) ---- */
     for (int i = 0; i < 32; i++) {
-        uint64_t qemu_val = reg_from_bin(g_bin + i * 8);
+        uint64_t qemu_val;
+        if (g_reg_bytes == 4) {
+            uint32_t v32 = (uint32_t)g_bin[i*4] | ((uint32_t)g_bin[i*4+1] << 8) |
+                           ((uint32_t)g_bin[i*4+2] << 16) | ((uint32_t)g_bin[i*4+3] << 24);
+            qemu_val = (uint64_t)(int64_t)(int32_t)v32;
+        } else {
+            qemu_val = reg_from_bin(g_bin + i * 8);
+        }
         if (env->gpr[i] != qemu_val) {
             CMP_HDR(); mismatch++;
             fprintf(stderr, "  gpr %-4s: emu=0x%016lx  qemu=0x%016lx\n",
@@ -255,7 +283,14 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
         }
     }
     {
-        uint64_t qemu_pc = reg_from_bin(g_bin + 33 * 8);
+        uint64_t qemu_pc;
+        if (g_reg_bytes == 4) {
+            uint32_t v32 = (uint32_t)g_bin[33*4] | ((uint32_t)g_bin[33*4+1] << 8) |
+                           ((uint32_t)g_bin[33*4+2] << 16) | ((uint32_t)g_bin[33*4+3] << 24);
+            qemu_pc = (uint64_t)(int32_t)v32;
+        } else {
+            qemu_pc = reg_from_bin(g_bin + 33 * 8);
+        }
         if (env->pc != qemu_pc) {
             CMP_HDR(); mismatch++;
             fprintf(stderr, "  PC  : emu=0x%016lx  qemu=0x%016lx\n", env->pc, qemu_pc);
@@ -517,16 +552,32 @@ int diffnet_spawn(const char *qemu_path, const char *kernel,
         char gdb_arg[32];
         snprintf(gdb_arg, sizeof(gdb_arg), "tcp::%d", port);
 
+        /* Read QEMU CPU model from env (for LA32 diffnet) */
+        const char *qemu_cpu = getenv("DIFFNET_QEMU_CPU");
+
         /* Use -gdb tcp::PORT for the GDB stub, -S to stop at entry */
-        execlp(qemu_path, qemu_path,
-               "-M", "virt",
-               "-device", loader_arg,
-               "-gdb", gdb_arg,
-               "-S",
-               "-nographic",
-               "-monitor", "none",
-               "-display", "none",
-               (char *)NULL);
+        if (qemu_cpu && qemu_cpu[0]) {
+            execlp(qemu_path, qemu_path,
+                   "-M", "virt",
+                   "-cpu", qemu_cpu,
+                   "-device", loader_arg,
+                   "-gdb", gdb_arg,
+                   "-S",
+                   "-nographic",
+                   "-monitor", "none",
+                   "-display", "none",
+                   (char *)NULL);
+        } else {
+            execlp(qemu_path, qemu_path,
+                   "-M", "virt",
+                   "-device", loader_arg,
+                   "-gdb", gdb_arg,
+                   "-S",
+                   "-nographic",
+                   "-monitor", "none",
+                   "-display", "none",
+                   (char *)NULL);
+        }
 
         /* execlp only returns on error */
         fprintf(stderr, "DIFFNET: failed to exec QEMU: %s\n", strerror(errno));

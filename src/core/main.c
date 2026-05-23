@@ -57,6 +57,8 @@ static bool diffnet_spawn_mode = false;
 #endif
 extern int check_signal;
 char *report_filename = "report_instruction.md";
+const char *arch_name = NULL;
+const char *kernel_cmdline = NULL;
 
 #if !defined(CONFIG_CLI) && !defined(CONFIG_PLUGIN)
 struct termios saved_termios;
@@ -93,6 +95,7 @@ static void sigaction_entry_int(int signal, siginfo_t *si, void *arg) {
 
 #if !defined (CONFIG_USER_ONLY) && !defined (CONFIG_DIFF)
 static void sigaction_entry_timer(int signal, siginfo_t *si, void *arg) {
+    if (!current_env) return;
     timer_t id = *((timer_t*)si->si_value.sival_ptr);
     if (id==current_env->timerid) {
         qemu_log_mask(CPU_LOG_TIMER, "TIMER alarmed, icount:%ld\n", current_env->icount);
@@ -103,6 +106,7 @@ static void sigaction_entry_timer(int signal, siginfo_t *si, void *arg) {
 }
 
 static void sigaction_entry_serial_timer(int signal, siginfo_t *si, void *arg) {
+    if (!current_env) return;
     timer_t id = *((timer_t*)si->si_value.sival_ptr);
     if (id==serial_timerid) {
         qemu_log_mask(CPU_LOG_TIMER, "SERIAL TIMER alarmed, icount:%ld\n", current_env->icount);
@@ -869,6 +873,7 @@ int exec_env(CPULoongArchState *env) {
                 test_pc = env->pc;
 
                 int r = interpreter(env, insn, ic);
+                if (!is_la64(env)) env->pc = (uint32_t)env->pc;
                 test_pc = env->pc;
                 if (debug_print_pc) {
                     if (pre_pc != env->pc) {
@@ -1195,7 +1200,7 @@ int main(int argc, char** argv, char **envp) {
         usage();
     }
     int c;
-    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:N:R:")) != -1) {
+    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:N:R:A:Q:")) != -1) {
         switch (c) {
             case 'm':
                 ram_size = atol(optarg) << 30;
@@ -1286,9 +1291,9 @@ int main(int argc, char** argv, char **envp) {
                 laemu_exit(EXIT_FAILURE);
                 break;
 #endif
-            case 'R':
-                report_filename = optarg;
-                break;
+            case 'R': report_filename = optarg; break;
+            case 'A': arch_name = optarg; break;
+            case 'Q': kernel_cmdline = optarg; break;
             case '?':
                 usage();
                 return 1;
@@ -1363,7 +1368,13 @@ int main(int argc, char** argv, char **envp) {
     CPULoongArchState* env = &cpu->env;
     cs->env = env;
     cpu_reset(cs);
-    loongarch_core_initfn(env);
+    if (arch_name) {
+        if (strcmp(arch_name, "loongarch32r") == 0) loongarch_la32r_initfn(env);
+        else if (strcmp(arch_name, "loongarch32s") == 0) loongarch_la32s_initfn(env);
+        else if (strcmp(arch_name, "la464") == 0) loongarch_la464_initfn(env);
+        else if (strcmp(arch_name, "openc910") == 0) loongarch_openc910_initfn(env);
+        else { fprintf(stderr, "Unknown arch: %s\n", arch_name); loongarch_core_initfn(env); }
+    } else { loongarch_core_initfn(env); }
     cpu_clear_tc(env);
     env->timer_counter = INT64_MAX;
 #ifndef CONFIG_USER_ONLY

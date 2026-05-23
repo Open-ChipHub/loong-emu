@@ -33,7 +33,7 @@ import signal
 import binascii
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-QEMU_PATH = "/home/airxs/user/qemu/qemu-10.1.2/build/qemu-system-loongarch64"
+QEMU_PATH = "/home/airxs/user/loongsonedu/qemu/qemu/build/qemu-system-loongarch64"
 EMU_PATH = os.path.join(PROJECT_ROOT, "build", "la_emu_kernel")
 DEFAULT_PORT = 1234
 DEFAULT_ADDR = "0x1c000000"
@@ -177,6 +177,8 @@ def mode_emu(args):
 
     cmd = [EMU_PATH, "-z", "-k", binary, "-b", "-E", args.addr, "-N", str(args.port),
            "-R", args.report]
+    if args.arch:
+        cmd += ["-A", args.arch]
 
     print(f"=== Diffnet: emu mode ===")
     print(f"  emu:   {EMU_PATH}")
@@ -186,6 +188,7 @@ def mode_emu(args):
     print(f"  port:   {args.port}")
     print(f"  max steps: {args.max_steps}")
     print(f"  batch size: {args.batch_size}")
+    print(f"  arch:     {args.arch or 'default'}")
     print(f"  compare:   {args.ctxcmp}")
     print(f"  csr dump:  0x{int(args.csr_dump_addr, 16):x}")
     print()
@@ -195,6 +198,9 @@ def mode_emu(args):
     env["DIFFNET_MAX_STEPS"] = str(args.max_steps)
     env["DIFFNET_BATCH_SIZE"] = str(args.batch_size)
     env["DIFFNET_CMP_MASK"] = args.ctxcmp
+    if args.arch:
+        qemu_cpu_map = {"loongarch32r": "max32r", "loongarch32s": "max32"}
+        env["DIFFNET_QEMU_CPU"] = qemu_cpu_map.get(args.arch, args.arch)
     env["DIFFNET_CSR_DUMP_ADDR"] = args.csr_dump_addr
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -391,6 +397,8 @@ def main():
     p_emu.add_argument("--batch-size", "-B", type=int, default=2000)
     p_emu.add_argument("--report", "-R", default="report_instruction.md",
                        help="Instruction stats report output (default: report_instruction.md)")
+    p_emu.add_argument("--arch", "-A", default=None,
+                       help="CPU architecture: la464, max32r, max32, openc910")
     p_emu.add_argument("--ctxcmp", "-C", default="gpr",
                        help="Comparison categories: gpr,fpr,lsx,lasx,csr,mem,all (default: gpr)")
     p_emu.add_argument("--csr-dump-addr", "-D", default="0x1c000300",

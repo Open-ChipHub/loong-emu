@@ -11,7 +11,7 @@
 
 /* Default QEMU binary for diffnet_spawn() */
 #ifndef DIFFNET_QEMU_PATH
-#define DIFFNET_QEMU_PATH "/home/airxs/user/qemu/qemu-10.1.2/build/qemu-system-loongarch64"
+#define DIFFNET_QEMU_PATH "/home/airxs/user/loongsonedu/qemu/qemu/build/qemu-system-loongarch64"
 #endif
 
 /* Comparison category bitmask */

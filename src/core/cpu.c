@@ -444,10 +444,79 @@ void loongarch_openc910_initfn(CPULoongArchState* env) {
     // env->CSR_PRCFG2 = 0x1004000; // support 16KB and 32MB page size
 
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, TLB_TYPE, 1);
-    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, MTLB_ENTRY, 0x6); // 64 entries
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, MTLB_ENTRY, 0x6);
 
-    env->CSR_STLBPS = 0xc; // 4KB page size
+    env->CSR_STLBPS = 0xc;
 
     ptw_hw_setVD = 0;
     fprintf(stderr, "warn:auto set ptw_hw_setVD=0\n");
+}
+
+void loongarch_la32r_initfn(CPULoongArchState* env)
+{
+    int i;
+    for (i = 0; i < 21; i++) env->cpucfg[i] = 0x0;
+    env->cpucfg[0] = 0x14c010;
+    uint32_t d = 0;
+    d = FIELD_DP32(d, CPUCFG1, ARCH, 0);
+    d = FIELD_DP32(d, CPUCFG1, PGMMU, 1);
+    d = FIELD_DP32(d, CPUCFG1, PALEN, 0x1f);
+    d = FIELD_DP32(d, CPUCFG1, VALEN, 0x1f);
+    d = FIELD_DP32(d, CPUCFG1, EP, 1);
+    d = FIELD_DP32(d, CPUCFG1, RPLV, 1);
+    env->cpucfg[1] = d;
+    d = 0;
+    d = FIELD_DP32(d, CPUCFG2, FP, 1);
+    d = FIELD_DP32(d, CPUCFG2, FP_SP, 1);
+    d = FIELD_DP32(d, CPUCFG2, FP_DP, 1);
+    d = FIELD_DP32(d, CPUCFG2, FP_VER, 1);
+    env->cpucfg[2] = d;
+    env->cpucfg[4] = 100 * 1000 * 1000;
+    d = 0;
+    d = FIELD_DP32(d, CPUCFG5, CC_MUL, 1);
+    d = FIELD_DP32(d, CPUCFG5, CC_DIV, 1);
+    env->cpucfg[5] = d;
+    env->CSR_ASID = FIELD_DP64(0, CSR_ASID, ASIDBITS, 0xa);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, TLB_TYPE, 2);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, MTLB_ENTRY, 63);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_WAYS, 7);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_SETS, 8);
+}
+
+void loongarch_la32s_initfn(CPULoongArchState* env)
+{
+    int i;
+    for (i = 0; i < 21; i++) env->cpucfg[i] = 0x0;
+    env->cpucfg[0] = 0x14c010;
+    uint32_t d = 0;
+    d = FIELD_DP32(d, CPUCFG1, ARCH, 1);
+    d = FIELD_DP32(d, CPUCFG1, PGMMU, 1);
+    d = FIELD_DP32(d, CPUCFG1, IOCSR, 1);
+    d = FIELD_DP32(d, CPUCFG1, PALEN, 0x1f);
+    d = FIELD_DP32(d, CPUCFG1, VALEN, 0x1f);
+    d = FIELD_DP32(d, CPUCFG1, UAL, 1);
+    d = FIELD_DP32(d, CPUCFG1, RI, 1);
+    d = FIELD_DP32(d, CPUCFG1, EP, 1);
+    d = FIELD_DP32(d, CPUCFG1, RPLV, 1);
+    d = FIELD_DP32(d, CPUCFG1, HP, 1);
+    d = FIELD_DP32(d, CPUCFG1, IOCSR_BRD, 1);
+    env->cpucfg[1] = d;
+    d = 0;
+    d = FIELD_DP32(d, CPUCFG2, FP, 1);
+    d = FIELD_DP32(d, CPUCFG2, FP_SP, 1);
+    d = FIELD_DP32(d, CPUCFG2, FP_DP, 1);
+    d = FIELD_DP32(d, CPUCFG2, FP_VER, 1);
+    d = FIELD_DP32(d, CPUCFG2, LLFTP, 1);
+    d = FIELD_DP32(d, CPUCFG2, LLFTP_VER, 1);
+    env->cpucfg[2] = d;
+    env->cpucfg[4] = 100 * 1000 * 1000;
+    d = 0;
+    d = FIELD_DP32(d, CPUCFG5, CC_MUL, 1);
+    d = FIELD_DP32(d, CPUCFG5, CC_DIV, 1);
+    env->cpucfg[5] = d;
+    env->CSR_ASID = FIELD_DP64(0, CSR_ASID, ASIDBITS, 0xa);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, TLB_TYPE, 2);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, MTLB_ENTRY, 63);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_WAYS, 7);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_SETS, 8);
 }

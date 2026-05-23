@@ -247,14 +247,16 @@ int qrsp_read_g_packet(qrsp_conn_t *conn, uint8_t *bin_buf, int buf_size)
         return -1;
     }
 
-    /* decode hex to binary (little-endian per 8-byte register) */
-    if (n < 560) {
-        fprintf(stderr, "qrsp: g packet too short (%d hex chars, expected 560)\n", n);
+    /* decode hex to binary. LA32: 280 hex chars (35×4B), LA64: 560 hex chars (35×8B) */
+    if (n < 280) {
+        fprintf(stderr, "qrsp: g packet too short (%d hex chars)\n", n);
         return -1;
     }
 
-    memset(bin_buf, 0, 280);
-    for (int i = 0; i < 280; i++) {
+    int bytes = n / 2;
+    if (bytes > buf_size) bytes = buf_size;
+    memset(bin_buf, 0, buf_size);
+    for (int i = 0; i < bytes; i++) {
         int hi = fromhex(hex[i * 2]);
         int lo = fromhex(hex[i * 2 + 1]);
         if (hi < 0 || lo < 0) {

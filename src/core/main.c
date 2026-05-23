@@ -264,7 +264,7 @@ fail:
 /* Load ELF kernel image into guest RAM, return entry point via entry_addr. */
 bool load_elf(const char* filename, uint64_t* entry_addr) {
     int size, i;
-    uint64_t mem_size, file_size;
+    uint64_t file_size;
     uint8_t e_ident[EI_NIDENT];
     uint8_t *data = NULL;
     int ret = 1;
@@ -284,43 +284,53 @@ bool load_elf(const char* filename, uint64_t* entry_addr) {
         e_ident[3] != ELFMAG3) {
             lsassertm(0, "%s is not an elf\n", filename);
     }
-    lsassert(e_ident[EI_CLASS] == ELFCLASS64);
+    bool is_elf32 = (e_ident[EI_CLASS] == ELFCLASS32);
+    lsassert(is_elf32 || e_ident[EI_CLASS] == ELFCLASS64);
     lseek(fd, 0, SEEK_SET);
 
-
-    if (read(fd, &ehdr, sizeof(ehdr)) != sizeof(ehdr))
-        goto fail;
-
-    *entry_addr = ehdr.e_entry;
-
-    size = ehdr.e_phnum * sizeof(phdr[0]);
-    if (lseek(fd, ehdr.e_phoff, SEEK_SET) != ehdr.e_phoff) {
-        goto fail;
+    uint64_t e_entry; uint64_t e_phoff; uint16_t e_phnum;
+    if (is_elf32) {
+        Elf32_Ehdr ehdr32;
+        if (read(fd, &ehdr32, sizeof(ehdr32)) != sizeof(ehdr32)) goto fail;
+        e_entry = ehdr32.e_entry & 0x1fffffff; e_phoff = ehdr32.e_phoff; e_phnum = ehdr32.e_phnum;
+    } else {
+        if (read(fd, &ehdr, sizeof(ehdr)) != sizeof(ehdr)) goto fail;
+        e_entry = ehdr.e_entry; e_phoff = ehdr.e_phoff; e_phnum = ehdr.e_phnum;
     }
-    phdr = (elf_phdr *)malloc(size);
-    if (!phdr)
-        goto fail;
-    if (read(fd, phdr, size) != size)
-        goto fail;
+    *entry_addr = e_entry;
+    if (lseek(fd, e_phoff, SEEK_SET) != (long)e_phoff) goto fail;
 
-    for(i = 0; i < ehdr.e_phnum; i++) {
-        ph = &phdr[i];
-        if (ph->p_type == PT_LOAD) {
-            mem_size = ph->p_memsz; /* Size of the ROM */
-            file_size = ph->p_filesz; /* Size of the allocated data */
-            data = (uint8_t*)malloc(file_size);
-            if (ph->p_filesz > 0) {
-                if (lseek(fd, ph->p_offset, SEEK_SET) < 0) {
-                    goto fail;
-                }
-                if (read(fd, data, file_size) != file_size) {
-                    goto fail;
-                }
-                memcpy(ram + (ph->p_paddr & 0xffffffff), data, file_size);
-                qemu_log_mask(CPU_LOG_PAGE, "%lx, file_size:%lx mem_size:%lx, \n", ph->p_paddr, file_size, mem_size);
+    if (is_elf32) {
+        Elf32_Phdr *ph32 = (Elf32_Phdr *)malloc(e_phnum * sizeof(Elf32_Phdr));
+        if (!ph32) goto fail;
+        size = e_phnum * sizeof(Elf32_Phdr);
+        if (read(fd, ph32, size) != size) { free(ph32); goto fail; }
+        for (i = 0; i < e_phnum; i++) {
+            if (ph32[i].p_type == PT_LOAD && ph32[i].p_filesz > 0) {
+                file_size = ph32[i].p_filesz; data = (uint8_t*)malloc(file_size);
+                if (lseek(fd, ph32[i].p_offset, SEEK_SET) < 0) { free(ph32); goto fail; }
+                if (read(fd, data, file_size) != (ssize_t)file_size) { free(ph32); goto fail; }
+                memcpy(ram + (ph32[i].p_paddr & 0x1fffffff), data, file_size);
+                free(data); data = NULL;
             }
-            free((void*)data);
         }
+        free(ph32);
+    } else {
+        phdr = (elf_phdr *)malloc(e_phnum * sizeof(phdr[0]));
+        if (!phdr) goto fail;
+        size = e_phnum * sizeof(phdr[0]);
+        if (read(fd, phdr, size) != size) { free(phdr); goto fail; }
+        for (i = 0; i < e_phnum; i++) {
+            ph = &phdr[i];
+            if (ph->p_type == PT_LOAD && ph->p_filesz > 0) {
+                file_size = ph->p_filesz; data = (uint8_t*)malloc(file_size);
+                if (lseek(fd, ph->p_offset, SEEK_SET) < 0) { free(phdr); goto fail; }
+                if (read(fd, data, file_size) != (ssize_t)file_size) { free(phdr); goto fail; }
+                memcpy(ram + (ph->p_paddr & 0xffffffff), data, file_size);
+                free(data); data = NULL;
+            }
+        }
+        free(phdr); phdr = NULL;
     }
 
 fail:

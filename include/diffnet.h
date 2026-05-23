@@ -14,6 +14,24 @@
 #define DIFFNET_QEMU_PATH "/home/airxs/user/qemu/qemu-10.1.2/build/qemu-system-loongarch64"
 #endif
 
+/* Comparison category bitmask */
+#define CMP_GPR   0x01   /* GPR r0-r31 + PC */
+#define CMP_FPR   0x02   /* FPR f0-f31 + FCC + FCSR */
+#define CMP_LSX   0x04   /* LSX vector registers */
+#define CMP_LASX  0x08   /* LASX vector registers */
+#define CMP_CSR   0x10   /* CSR dump area */
+#define CMP_MEM   0x20   /* Memory test output */
+#define CMP_ALL   (CMP_GPR | CMP_FPR | CMP_LSX | CMP_LASX | CMP_CSR | CMP_MEM)
+
+/* Number of instructions between batch comparisons. 1 = per-step. */
+extern int diffnet_batch_size;
+
+/* Maximum total instructions to compare. */
+extern int diffnet_max_steps;
+
+/* Which comparison categories to enable (CMP_* bitmask). Default: CMP_GPR. */
+extern int diffnet_cmp_mask;
+
 /* Set by command-line -N flag, checked by exec_env(). */
 extern bool diffnet_enabled;
 

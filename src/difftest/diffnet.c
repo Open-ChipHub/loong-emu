@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -23,6 +24,7 @@
 bool diffnet_enabled;
 int diffnet_max_steps = 70000;
 int diffnet_batch_size = 2000;
+int diffnet_cmp_mask = CMP_GPR;
 
 static qrsp_conn_t g_qrsp;
 static pid_t g_child_pid = 0;
@@ -67,48 +69,173 @@ int diffnet_init(const char *host, int port, CPULoongArchState *env)
         diffnet_max_steps = atoi(env_val);
     if ((env_val = getenv("DIFFNET_BATCH_SIZE")))
         diffnet_batch_size = atoi(env_val);
-    fprintf(stderr, "DIFFNET: max_steps=%d batch_size=%d\n",
-            diffnet_max_steps, diffnet_batch_size);
+    if ((env_val = getenv("DIFFNET_CMP_MASK"))) {
+        diffnet_cmp_mask = 0;
+        if (strstr(env_val, "all"))  diffnet_cmp_mask = CMP_ALL;
+        if (strstr(env_val, "gpr"))  diffnet_cmp_mask |= CMP_GPR;
+        if (strstr(env_val, "fpr"))  diffnet_cmp_mask |= CMP_FPR;
+        if (strstr(env_val, "lsx"))  diffnet_cmp_mask |= CMP_LSX;
+        if (strstr(env_val, "lasx")) diffnet_cmp_mask |= CMP_LASX;
+        if (strstr(env_val, "csr"))  diffnet_cmp_mask |= CMP_CSR;
+        if (strstr(env_val, "mem"))  diffnet_cmp_mask |= CMP_MEM;
+    }
+    fprintf(stderr, "DIFFNET: max_steps=%d batch_size=%d cmp=0x%02x\n",
+            diffnet_max_steps, diffnet_batch_size, diffnet_cmp_mask);
 
     return 0;
 }
 
-/* Compare emu's current register state against a g-packet response from QEMU. */
-static int diffnet_compare(CPULoongArchState *env, const uint8_t *bin)
+/* Compare emu's current register state against a g-packet response from QEMU.
+ * Comparison categories controlled by diffnet_cmp_mask (CMP_* flags). */
+static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
 {
     int mismatch = 0;
+    uint8_t buf[32];
 
+#define CMP_HDR() do { \
+    if (mismatch == 0) { \
+        uint64_t _pc = reg_from_bin(g_bin + 33 * 8); \
+        fprintf(stderr, "\n=== MISMATCH batch=%ld icount=%ld prev_pc=0x%016lx qemu_pc=0x%016lx ===\n", \
+                g_batch_count, env->icount, env->prev_pc, _pc); \
+    } \
+} while(0)
+
+    /* ---- 1. GPRs (r0-r31) + PC (always compared) ---- */
     for (int i = 0; i < 32; i++) {
-        uint64_t qemu_val = reg_from_bin(bin + i * 8);
+        uint64_t qemu_val = reg_from_bin(g_bin + i * 8);
         if (env->gpr[i] != qemu_val) {
-            if (mismatch == 0) {
-                uint64_t qemu_pc = reg_from_bin(bin + 33 * 8);
-                fprintf(stderr,
-                        "\n=== DIFFNET MISMATCH batch=%ld icount=%ld prev_pc=0x%016lx qemu_pc=0x%016lx ===\n",
-                        g_batch_count, env->icount, env->prev_pc, qemu_pc);
-            }
-            fprintf(stderr, "  %-4s: emu=0x%016lx  qemu=0x%016lx\n",
+            CMP_HDR(); mismatch++;
+            fprintf(stderr, "  gpr %-4s: emu=0x%016lx  qemu=0x%016lx\n",
                     regnames[i], env->gpr[i], qemu_val);
-            mismatch++;
+        }
+    }
+    {
+        uint64_t qemu_pc = reg_from_bin(g_bin + 33 * 8);
+        if (env->pc != qemu_pc) {
+            CMP_HDR(); mismatch++;
+            fprintf(stderr, "  PC  : emu=0x%016lx  qemu=0x%016lx\n", env->pc, qemu_pc);
         }
     }
 
-    uint64_t qemu_pc = reg_from_bin(bin + 33 * 8);
-    if (env->pc != qemu_pc) {
-        if (mismatch == 0) {
-            fprintf(stderr,
-                    "\n=== DIFFNET MISMATCH batch=%ld icount=%ld prev_pc=0x%016lx ===\n",
-                    g_batch_count, env->icount, env->prev_pc);
+    /* ---- 2. FPR + FCC + FCSR (CMP_FPR) ---- */
+    if ((diffnet_cmp_mask & CMP_FPR) && FIELD_EX32(env->cpucfg[2], CPUCFG2, FP)) {
+        for (int i = 0; i < 32; i++) {
+            if (qrsp_read_register(&g_qrsp, 35 + i, buf, 8) == 8) {
+                uint64_t qemu_val = reg_from_bin(buf);
+                uint64_t emu_val = env->fpr[i].vreg.D[0];
+                if (emu_val != qemu_val) {
+                    CMP_HDR(); mismatch++;
+                    fprintf(stderr, "  fpr %-4s: emu=0x%016lx  qemu=0x%016lx\n",
+                            fregnames[i], emu_val, qemu_val);
+                }
+            }
         }
-        fprintf(stderr, "  PC  : emu=0x%016lx  qemu=0x%016lx\n",
-                env->pc, qemu_pc);
-        mismatch++;
+        for (int i = 0; i < 8; i++) {
+            if (qrsp_read_register(&g_qrsp, 67 + i, buf, 1) == 1) {
+                uint8_t emu_val = env->cf[i] ? 1 : 0;
+                if (emu_val != buf[0]) {
+                    CMP_HDR(); mismatch++;
+                    fprintf(stderr, "  fcc%d: emu=%d qemu=%d\n", i, emu_val, buf[0]);
+                }
+            }
+        }
+        if (qrsp_read_register(&g_qrsp, 75, buf, 4) == 4) {
+            uint32_t qemu_val = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+                                ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+            if (env->fcsr0 != qemu_val) {
+                CMP_HDR(); mismatch++;
+                fprintf(stderr, "  fcsr: emu=0x%08x qemu=0x%08x\n", env->fcsr0, qemu_val);
+            }
+        }
     }
 
-    if (mismatch > 0) {
-        fprintf(stderr, "  (prev instruction at pc=0x%016lx: 0x%08x)\n",
-                env->prev_pc, env->insn);
+    /* ---- 3. LSX vectors (CMP_LSX) ---- */
+    if ((diffnet_cmp_mask & CMP_LSX) && FIELD_EX32(env->cpucfg[2], CPUCFG2, LSX)) {
+        for (int i = 0; i < 32; i++) {
+            if (qrsp_read_register(&g_qrsp, 76 + i, buf, 16) == 16) {
+                for (int j = 0; j < 2; j++) {
+                    uint64_t emu_val = env->fpr[i].vreg.D[j];
+                    uint64_t qemu_val = reg_from_bin(buf + j * 8);
+                    if (emu_val != qemu_val) {
+                        CMP_HDR(); mismatch++;
+                        fprintf(stderr, "  vr%d.D[%d]: emu=0x%016lx qemu=0x%016lx\n",
+                                i, j, emu_val, qemu_val);
+                    }
+                }
+            }
+        }
     }
+
+    /* ---- 4. LASX vectors (CMP_LASX) ---- */
+    if ((diffnet_cmp_mask & CMP_LASX) && FIELD_EX32(env->cpucfg[2], CPUCFG2, LASX)) {
+        for (int i = 0; i < 32; i++) {
+            if (qrsp_read_register(&g_qrsp, 108 + i, buf, 32) == 32) {
+                for (int j = 0; j < 4; j++) {
+                    uint64_t emu_val = env->fpr[i].vreg.D[j];
+                    uint64_t qemu_val = reg_from_bin(buf + j * 8);
+                    if (emu_val != qemu_val) {
+                        CMP_HDR(); mismatch++;
+                        fprintf(stderr, "  xr%d.D[%d]: emu=0x%016lx qemu=0x%016lx\n",
+                                i, j, emu_val, qemu_val);
+                    }
+                }
+            }
+        }
+    }
+
+    /* ---- 5. CSR dump (CMP_CSR) ---- */
+    if (diffnet_cmp_mask & CMP_CSR) {
+        uint8_t csr_buf[256];
+        if (qrsp_read_memory(&g_qrsp, 0x1c000200, csr_buf, 176) == 176) {
+            int nonzero = 0;
+            for (int i = 0; i < 176; i++) { if (csr_buf[i]) { nonzero = 1; break; } }
+            if (nonzero) {
+                struct { const char *n; uint64_t v; } csrs[] = {
+                    {"CRMD",env->CSR_CRMD},{"PRMD",env->CSR_PRMD},{"EUEN",env->CSR_EUEN},
+                    {"ECFG",env->CSR_ECFG},{"ESTAT",env->CSR_ESTAT},{"ERA",env->CSR_ERA},
+                    {"BADV",env->CSR_BADV},{"EENTRY",env->CSR_EENTRY},
+                    {"TLBIDX",env->CSR_TLBIDX},{"TLBEHI",env->CSR_TLBEHI},
+                    {"TLBELO0",env->CSR_TLBELO0},{"TLBELO1",env->CSR_TLBELO1},
+                    {"ASID",env->CSR_ASID},{"PGDL",env->CSR_PGDL},{"PGDH",env->CSR_PGDH},
+                    {"STLBPS",env->CSR_STLBPS},{"TCFG",env->CSR_TCFG},{"TVAL",env->CSR_TVAL},
+                    {"TICLR",env->CSR_TICLR},{"LLBCTL",env->CSR_LLBCTL},
+                    {"DMW0",env->CSR_DMW[0]},{"DMW1",env->CSR_DMW[1]},
+                };
+                int ncsr = sizeof(csrs)/sizeof(csrs[0]);
+                for (int i = 0; i < ncsr; i++) {
+                    uint64_t qv = reg_from_bin(csr_buf + i * 8);
+                    if (csrs[i].v != qv) {
+                        CMP_HDR(); mismatch++;
+                        fprintf(stderr, "  csr %-8s: emu=0x%016lx qemu=0x%016lx\n",
+                                csrs[i].n, csrs[i].v, qv);
+                    }
+                }
+            }
+        }
+    }
+
+    /* ---- 6. Test output memory (CMP_MEM) ---- */
+    if (diffnet_cmp_mask & CMP_MEM) {
+        uint8_t mem_buf[4];
+        if (qrsp_read_memory(&g_qrsp, 0x1c000100, mem_buf, 4) == 4) {
+            int nonzero = 0;
+            for (int i = 0; i < 4; i++) { if (mem_buf[i]) { nonzero = 1; break; } }
+            if (nonzero) {
+                uint32_t qemu_val = (uint32_t)mem_buf[0] | ((uint32_t)mem_buf[1] << 8) |
+                                    ((uint32_t)mem_buf[2] << 16) | ((uint32_t)mem_buf[3] << 24);
+                uint32_t emu_val = ram_lduw(0x1c000100);
+                if (emu_val != qemu_val) {
+                    CMP_HDR(); mismatch++;
+                    fprintf(stderr, "  mem[0x1c000100]: emu=0x%08x qemu=0x%08x\n", emu_val, qemu_val);
+                }
+            }
+        }
+    }
+
+#undef CMP_HDR
+
+    if (mismatch > 0)
+        fprintf(stderr, "  (prev_pc=0x%016lx insn=0x%08x)\n", env->prev_pc, env->insn);
     return mismatch;
 }
 

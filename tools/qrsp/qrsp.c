@@ -327,3 +327,61 @@ int qrsp_remove_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind)
     }
     return 0;
 }
+
+int qrsp_read_register(qrsp_conn_t *conn, int regnum, uint8_t *buf, int buf_size)
+{
+    char cmd[16];
+    snprintf(cmd, sizeof(cmd), "p%x", regnum);
+    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+
+    char hex[128];
+    int n = qrsp_recv_packet(conn, hex, sizeof(hex));
+    if (n < 0) return -1;
+
+    if (n == 0 || hex[0] == 'E') {
+        fprintf(stderr, "qrsp: p%x returned error: %s\n", regnum, hex);
+        return -1;
+    }
+
+    int bytes = n / 2;
+    if (bytes > buf_size) bytes = buf_size;
+    for (int i = 0; i < bytes; i++) {
+        int hi = fromhex(hex[i * 2]);
+        int lo = fromhex(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            fprintf(stderr, "qrsp: invalid hex in p%x reply\n", regnum);
+            return -1;
+        }
+        buf[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return bytes;
+}
+
+int qrsp_read_memory(qrsp_conn_t *conn, uint64_t addr, uint8_t *buf, int len)
+{
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "m%lx,%x", addr, len);
+    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+
+    char hex[4096];
+    int n = qrsp_recv_packet(conn, hex, sizeof(hex));
+    if (n < 0) return -1;
+
+    if (n == 0 || hex[0] == 'E') {
+        fprintf(stderr, "qrsp: m%lx,%x returned error: %s\n", addr, len, hex);
+        return -1;
+    }
+
+    int bytes = n / 2;
+    if (bytes > len) bytes = len;
+    for (int i = 0; i < bytes; i++) {
+        int hi = fromhex(hex[i * 2]);
+        int lo = fromhex(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            fprintf(stderr, "qrsp: invalid hex in memory reply\n");
+            return -1;
+        }
+        buf[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return bytes;
+}

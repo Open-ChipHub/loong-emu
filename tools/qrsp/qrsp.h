@@ -54,6 +54,13 @@ int  qrsp_continue(qrsp_conn_t *conn);
 int  qrsp_set_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind);
 int  qrsp_remove_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind);
 
+/* Read single register via 'p' packet. Returns byte count on success, -1 on error.
+ * buf must be large enough for the register (max 32 bytes for LASX). */
+int  qrsp_read_register(qrsp_conn_t *conn, int regnum, uint8_t *buf, int buf_size);
+
+/* Read memory via 'm' packet. Returns bytes read on success, -1 on error. */
+int  qrsp_read_memory(qrsp_conn_t *conn, uint64_t addr, uint8_t *buf, int len);
+
 /* Utility: decode a 16-char hex string to uint64_t (little-endian). */
 uint64_t qrsp_hex_decode_le64(const char *hex);
 

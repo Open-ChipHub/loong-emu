@@ -24,3 +24,6 @@ GTAGS
 compile_commands.json
 *.o
 *.O
+*.bin
+*.exe.bin
+*.hex

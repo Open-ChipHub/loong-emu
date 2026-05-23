@@ -9,6 +9,9 @@ ifeq (${DIFF},1)
 else
 	GDB := 1
 endif
+ifeq (${DIFF_NET},1)
+	GDB := 0
+endif
 CFLAGS ?= -g ${OPT_FLAG} -MMD -MP -Iinclude -Wall -Werror -Wno-error=unused-function \
           -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 LDFLAGS ?= -lm -lrt -rdynamic ${OPT_FLAG} -lglib-2.0
@@ -25,6 +28,11 @@ endif
 
 ifeq (${DIFF},1)
 	CFLAGS += -DCONFIG_DIFF -fPIC
+endif
+
+ifeq (${DIFF_NET},1)
+	CFLAGS += -DCONFIG_DIFF_NET -Itools/qrsp
+	DIFF_NET_SOURCES := src/difftest/diffnet.c tools/qrsp/qrsp.c
 endif
 
 ifeq (${PERF},1)
@@ -55,15 +63,15 @@ endif
 BUILD_DIR := ./build
 SRC_DIRS := ./
 
-USER_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/syscall/syscall.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/checkpoint/checkpoint.c
+USER_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/syscall/syscall.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/checkpoint/checkpoint.c ${DIFF_NET_SOURCES}
 USER_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_user.o,$(USER_SOURCES)))
 USER_DEPS := $(USER_OBJS:.o=.d)
 
-KERNEL_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c  src/mmu/tlb_helper.c src/core/cpu_helper.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/devices/serial.c src/devices/serial_plus.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/devices/fifo.c src/checkpoint/checkpoint.c
+KERNEL_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c  src/mmu/tlb_helper.c src/core/cpu_helper.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/devices/serial.c src/devices/serial_plus.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/devices/fifo.c src/checkpoint/checkpoint.c ${DIFF_NET_SOURCES}
 KERNEL_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_kernel.o,$(KERNEL_SOURCES)))
 KERNEL_DEPS := $(KERNEL_OBJS:.o=.d)
 
-DIFF_SOURCES := $(KERNEL_SOURCES) src/difftest/difftest.c
+DIFF_SOURCES := $(KERNEL_SOURCES) src/difftest/difftest.c ${DIFF_NET_SOURCES}
 DIFF_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_diff.o,$(DIFF_SOURCES)))
 DIFF_DEPS := $(DIFF_OBJS:.o=.d)
 

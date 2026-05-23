@@ -27,6 +27,9 @@
 #if defined(CONFIG_PLUGIN)
 #include <dlfcn.h>
 #endif
+#if defined(CONFIG_DIFF_NET)
+#include "diffnet.h"
+#endif
 
 #if defined(CONFIG_PLUGIN)
 la_emu_plugin_ops* plugin_ops;
@@ -46,6 +49,10 @@ volatile sig_atomic_t serial_timer_int;
 __thread CPULoongArchState *current_env;
 
 int gdbserver = 0;
+#if defined(CONFIG_DIFF_NET)
+static char diffnet_host[256];
+static int  diffnet_port = -1;
+#endif
 extern int check_signal;
 extern int64_t singlestep;
 
@@ -168,6 +175,7 @@ void usage(void) {
     fprintf(stderr, "-z Determined events\n");
     fprintf(stderr, "-g Enable gdbserver\n");
     fprintf(stderr, "-w Force enable hardware page table walker\n");
+    fprintf(stderr, "-N host:port  Enable network difftest against QEMU GDB stub\n");
     laemu_exit(EXIT_SUCCESS);
 }
 
@@ -723,7 +731,9 @@ extern long debug_print_pc;
 extern FILE* CKP_DP_PC;
 uint64_t pre_pc = 0;
 
+#if defined(CONFIG_GDB)
 extern bool gdb_verbose;
+#endif
 
 bool load_bios = false;
 uint64_t load_bios_entry = 0x0;
@@ -858,6 +868,13 @@ int exec_env(CPULoongArchState *env) {
                     qemu_log("ill instruction, pc:%lx insn:%08x\n", env->pc, insn);
                 }
 
+#if defined(CONFIG_DIFF_NET)
+                if (diffnet_enabled && diffnet_check(env) < 0) {
+                    fprintf(stderr, "DIFFNET: halting on mismatch\n");
+                    laemu_exit(EXIT_FAILURE);
+                }
+#endif
+
 #if defined (CONFIG_DIFF) || defined (CONFIG_CLI)
                 -- singlestep;
 #endif
@@ -867,6 +884,11 @@ int exec_env(CPULoongArchState *env) {
             }
         } else {
             loongarch_cpu_do_interrupt(cs);
+#if defined(CONFIG_DIFF_NET)
+            if (diffnet_enabled) {
+                diffnet_step_exception(env);
+            }
+#endif
             env->ecount ++;
         }
     }
@@ -1143,7 +1165,7 @@ int main(int argc, char** argv, char **envp) {
         usage();
     }
     int c;
-    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:")) != -1) {
+    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:N:")) != -1) {
         switch (c) {
             case 'm':
                 ram_size = atol(optarg) << 30;
@@ -1181,7 +1203,9 @@ int main(int argc, char** argv, char **envp) {
                 determined = 1;
                 break;
             case 'v':
+#if defined(CONFIG_GDB)
                 gdb_verbose = true;
+#endif
             case 'b':
                 load_bios = true;
             case 'w':
@@ -1207,6 +1231,27 @@ int main(int argc, char** argv, char **envp) {
 #endif
             }
                 break;
+#if defined(CONFIG_DIFF_NET)
+            case 'N': {
+                char buf[256];
+                strncpy(buf, optarg, sizeof(buf) - 1);
+                buf[sizeof(buf) - 1] = '\0';
+                char *colon = strchr(buf, ':');
+                if (!colon) {
+                    fprintf(stderr, "-N expects host:port (e.g. localhost:1234)\n");
+                    laemu_exit(EXIT_FAILURE);
+                }
+                *colon = '\0';
+                strncpy(diffnet_host, buf, sizeof(diffnet_host) - 1);
+                diffnet_port = atoi(colon + 1);
+                break;
+            }
+#else
+            case 'N':
+                fprintf(stderr, "DIFFNET not enabled. Build with DIFF_NET=1\n");
+                laemu_exit(EXIT_FAILURE);
+                break;
+#endif
             case '?':
                 usage();
                 return 1;
@@ -1421,8 +1466,19 @@ int main(int argc, char** argv, char **envp) {
         gdbserver_loop();
 #endif
     } else {
+#if defined(CONFIG_DIFF_NET)
+        if (diffnet_port > 0) {
+            if (diffnet_init(diffnet_host, diffnet_port, env) < 0) {
+                laemu_exit(EXIT_FAILURE);
+            }
+            diffnet_enabled = true;
+        }
+#endif
         exec_env(env);
     }
+#if defined(CONFIG_DIFF_NET)
+    diffnet_cleanup();
+#endif
     fprintf(stderr, "end from main %s %d\n", __FILE__, __LINE__);
     return 0;
 }

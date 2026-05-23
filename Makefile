@@ -55,15 +55,15 @@ endif
 BUILD_DIR := ./build
 SRC_DIRS := ./
 
-USER_SOURCES := src/fpu_helper.c  src/host-utils.c  src/int128.c  src/interpreter.c  src/main.c  src/softfloat.c src/vec_helper.c src/tcg-runtime-gvec.c src/syscall.c ${GDB_SOURCES} src/debug_cli.c src/cpu.c src/checkpoint.c
+USER_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/syscall/syscall.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/checkpoint/checkpoint.c
 USER_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_user.o,$(USER_SOURCES)))
 USER_DEPS := $(USER_OBJS:.o=.d)
 
-KERNEL_SOURCES := src/fpu_helper.c  src/host-utils.c  src/int128.c  src/interpreter.c  src/main.c  src/softfloat.c  src/tlb_helper.c src/cpu_helper.c src/vec_helper.c src/tcg-runtime-gvec.c src/serial.c src/serial_plus.c ${GDB_SOURCES} src/debug_cli.c src/cpu.c src/fifo.c src/checkpoint.c
+KERNEL_SOURCES := src/fpu/fpu_helper.c  src/utils/host-utils.c  src/utils/int128.c  src/core/interpreter.c  src/core/main.c  src/fpu/softfloat.c  src/mmu/tlb_helper.c src/core/cpu_helper.c src/vec/vec_helper.c src/vec/tcg-runtime-gvec.c src/devices/serial.c src/devices/serial_plus.c ${GDB_SOURCES} src/cli/debug_cli.c src/core/cpu.c src/devices/fifo.c src/checkpoint/checkpoint.c
 KERNEL_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_kernel.o,$(KERNEL_SOURCES)))
 KERNEL_DEPS := $(KERNEL_OBJS:.o=.d)
 
-DIFF_SOURCES := $(KERNEL_SOURCES) src/difftest.c
+DIFF_SOURCES := $(KERNEL_SOURCES) src/difftest/difftest.c
 DIFF_OBJS := $(addprefix $(BUILD_DIR)/, $(patsubst %.c,%_diff.o,$(DIFF_SOURCES)))
 DIFF_DEPS := $(DIFF_OBJS:.o=.d)
 

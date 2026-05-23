@@ -61,6 +61,9 @@ int  qrsp_read_register(qrsp_conn_t *conn, int regnum, uint8_t *buf, int buf_siz
 /* Read memory via 'm' packet. Returns bytes read on success, -1 on error. */
 int  qrsp_read_memory(qrsp_conn_t *conn, uint64_t addr, uint8_t *buf, int len);
 
+/* Write memory via 'M' packet. Returns 0 on success, -1 on error. */
+int  qrsp_write_memory(qrsp_conn_t *conn, uint64_t addr, const uint8_t *buf, int len);
+
 /* Utility: decode a 16-char hex string to uint64_t (little-endian). */
 uint64_t qrsp_hex_decode_le64(const char *hex);
 

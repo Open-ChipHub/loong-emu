@@ -357,6 +357,26 @@ int qrsp_read_register(qrsp_conn_t *conn, int regnum, uint8_t *buf, int buf_size
     return bytes;
 }
 
+int qrsp_write_memory(qrsp_conn_t *conn, uint64_t addr, const uint8_t *buf, int len)
+{
+    /* Build payload: M<addr>,<len>:<hex data> */
+    char hex[4096];
+    int hlen = snprintf(hex, sizeof(hex), "M%lx,%x:", addr, len);
+    for (int i = 0; i < len; i++) {
+        snprintf(hex + hlen + i * 2, 3, "%02x", buf[i]);
+    }
+    if (qrsp_send_packet(conn, hex, hlen + len * 2) < 0) return -1;
+
+    char reply[16];
+    int n = qrsp_recv_packet(conn, reply, sizeof(reply));
+    if (n < 0) return -1;
+    if (strcmp(reply, "OK") != 0) {
+        fprintf(stderr, "qrsp: M%lx,%x failed: %s\n", addr, len, reply);
+        return -1;
+    }
+    return 0;
+}
+
 int qrsp_read_memory(qrsp_conn_t *conn, uint64_t addr, uint8_t *buf, int len)
 {
     char cmd[64];

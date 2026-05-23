@@ -186,6 +186,7 @@ def mode_emu(args):
     print(f"  max steps: {args.max_steps}")
     print(f"  batch size: {args.batch_size}")
     print(f"  compare:   {args.ctxcmp}")
+    print(f"  csr dump:  0x{int(args.csr_dump_addr, 16):x}")
     print()
 
     env = os.environ.copy()
@@ -193,6 +194,7 @@ def mode_emu(args):
     env["DIFFNET_MAX_STEPS"] = str(args.max_steps)
     env["DIFFNET_BATCH_SIZE"] = str(args.batch_size)
     env["DIFFNET_CMP_MASK"] = args.ctxcmp
+    env["DIFFNET_CSR_DUMP_ADDR"] = args.csr_dump_addr
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, env=env)
@@ -343,6 +345,8 @@ def main():
     p_emu.add_argument("--batch-size", "-B", type=int, default=2000)
     p_emu.add_argument("--ctxcmp", "-C", default="gpr",
                        help="Comparison categories: gpr,fpr,lsx,lasx,csr,mem,all (default: gpr)")
+    p_emu.add_argument("--csr-dump-addr", "-D", default="0x1c000300",
+                       help="CSR trampoline code+data base address")
 
     # step mode
     p_step = sub.add_parser("step", help="Pure Python step-by-step via GDB RSP")

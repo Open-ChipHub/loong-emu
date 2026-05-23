@@ -30,15 +30,158 @@ static qrsp_conn_t g_qrsp;
 static pid_t g_child_pid = 0;
 static uint64_t g_batch_count;
 
-/* Decode one 8-byte register from binary buffer (little-endian).
- * bin points to 8 bytes in the g-packet binary output. */
+/* Pre-assembled CSR dump blob (tools/dump_csr.S).
+ * Writes 22 CSRs to memory at address in $t0, uses $t1 as scratch.
+ * Ends with 'b .' (infinite loop) at the last 4 bytes. */
+static uint64_t g_csr_dump_addr = 0x1c000300;
+static const uint8_t csr_dump_blob[] = {
+    0x0d, 0x00, 0x00, 0x04, 0x8d, 0x01, 0xc0, 0x29, 0x0d, 0x04, 0x00, 0x04,
+    0x8d, 0x21, 0xc0, 0x29, 0x0d, 0x08, 0x00, 0x04, 0x8d, 0x41, 0xc0, 0x29,
+    0x0d, 0x10, 0x00, 0x04, 0x8d, 0x61, 0xc0, 0x29, 0x0d, 0x14, 0x00, 0x04,
+    0x8d, 0x81, 0xc0, 0x29, 0x0d, 0x18, 0x00, 0x04, 0x8d, 0xa1, 0xc0, 0x29,
+    0x0d, 0x1c, 0x00, 0x04, 0x8d, 0xc1, 0xc0, 0x29, 0x0d, 0x30, 0x00, 0x04,
+    0x8d, 0xe1, 0xc0, 0x29, 0x0d, 0x40, 0x00, 0x04, 0x8d, 0x01, 0xc1, 0x29,
+    0x0d, 0x44, 0x00, 0x04, 0x8d, 0x21, 0xc1, 0x29, 0x0d, 0x48, 0x00, 0x04,
+    0x8d, 0x41, 0xc1, 0x29, 0x0d, 0x4c, 0x00, 0x04, 0x8d, 0x61, 0xc1, 0x29,
+    0x0d, 0x60, 0x00, 0x04, 0x8d, 0x81, 0xc1, 0x29, 0x0d, 0x64, 0x00, 0x04,
+    0x8d, 0xa1, 0xc1, 0x29, 0x0d, 0x68, 0x00, 0x04, 0x8d, 0xc1, 0xc1, 0x29,
+    0x0d, 0x78, 0x00, 0x04, 0x8d, 0xe1, 0xc1, 0x29, 0x0d, 0x04, 0x01, 0x04,
+    0x8d, 0x01, 0xc2, 0x29, 0x0d, 0x08, 0x01, 0x04, 0x8d, 0x21, 0xc2, 0x29,
+    0x0d, 0x10, 0x01, 0x04, 0x8d, 0x41, 0xc2, 0x29, 0x0d, 0x80, 0x01, 0x04,
+    0x8d, 0x61, 0xc2, 0x29, 0x0d, 0x00, 0x06, 0x04, 0x8d, 0x81, 0xc2, 0x29,
+    0x0d, 0x04, 0x06, 0x04, 0x8d, 0xa1, 0xc2, 0x29, 0x00, 0x00, 0x00, 0x50
+};
+#define CSR_DUMP_LEN       (sizeof(csr_dump_blob))            /* 180 bytes of code */
+#define CSR_DUMP_DATA_OFF   CSR_DUMP_LEN                       /* data right after code */
+#define CSR_DUMP_DATA_SIZE  176                                /* 22 CSRs x 8 bytes */
+#define CSR_DUMP_TOTAL      (CSR_DUMP_LEN + CSR_DUMP_DATA_SIZE) /* 356 bytes */
+#define CSR_DUMP_END_PC     (g_csr_dump_addr + CSR_DUMP_LEN - 4)
+
+/* Decode one 8-byte register from binary buffer (little-endian). */
 static inline uint64_t reg_from_bin(const uint8_t *bin)
 {
     uint64_t val = 0;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8; i++)
         val |= (uint64_t)bin[i] << (i * 8);
-    }
     return val;
+}
+
+/* ---- CSR trampoline: run pre-encoded dump blob on emu side ---- */
+/* Saves original memory at dump_addr, runs the blob, restores memory. */
+static void emu_csr_trampoline(CPULoongArchState *env)
+{
+    uint64_t base = g_csr_dump_addr;
+    uint8_t *gm = (uint8_t *)(ram + (base & 0xffffffff));
+    uint64_t data_addr = base + CSR_DUMP_DATA_OFF;
+
+    /* Save original memory (code + data area) */
+    uint8_t orig[CSR_DUMP_TOTAL];
+    memcpy(orig, gm, CSR_DUMP_TOTAL);
+
+    /* Save CPU context */
+    uint64_t saved_pc = env->pc;
+    uint64_t saved_t0 = env->gpr[12];
+    uint64_t saved_t1 = env->gpr[13];
+
+    /* Inject blob and set $t0 = data area */
+    memcpy(gm, csr_dump_blob, CSR_DUMP_LEN);
+    env->gpr[12] = data_addr;
+
+    /* Execute blob until 'b .' loop */
+    env->pc = base;
+    uint64_t end_pc = CSR_DUMP_END_PC;
+    for (int i = 0; i < 100; i++) {
+        if (env->pc == end_pc) break;
+        uint32_t insn = ram_lduw(env->pc);
+        interpreter(env, insn, NULL);
+    }
+
+    /* Restore CPU context */
+    env->pc = saved_pc;
+    env->gpr[12] = saved_t0;
+    env->gpr[13] = saved_t1;
+
+    /* Restore original memory */
+    memcpy(gm, orig, CSR_DUMP_TOTAL);
+}
+
+/* ---- CSR trampoline: inject, run, read, restore on QEMU side ---- */
+static int qemu_csr_trampoline(uint8_t *csr_buf)
+{
+    uint64_t base = g_csr_dump_addr;
+    uint64_t data_addr = base + CSR_DUMP_DATA_OFF;
+    uint8_t orig[CSR_DUMP_TOTAL];
+    uint8_t sav_t0[8], sav_t1[8], sav_pc[8];
+
+    /* 1. Save QEMU's original memory at the dump area */
+    if (qrsp_read_memory(&g_qrsp, base, orig, CSR_DUMP_TOTAL) != CSR_DUMP_TOTAL)
+        return -1;
+
+    /* 2. Save QEMU's $t0, $t1, PC */
+    if (qrsp_read_register(&g_qrsp, 12, sav_t0, 8) != 8) goto restore_mem;
+    if (qrsp_read_register(&g_qrsp, 13, sav_t1, 8) != 8) goto restore_mem;
+    if (qrsp_read_register(&g_qrsp, 33, sav_pc, 8) != 8) goto restore_mem;
+
+    /* 3. Write blob to QEMU memory */
+    if (qrsp_write_memory(&g_qrsp, base, csr_dump_blob, CSR_DUMP_LEN) < 0)
+        goto restore_mem;
+
+    /* 4. Set $t0 = data area and PC = blob start in QEMU */
+    {
+        uint8_t val8[8];
+        /* Write $t0 = data_addr */
+        for (int i = 0; i < 8; i++) val8[i] = (data_addr >> (i*8)) & 0xff;
+        {
+            char cmd[64]; char reply[16];
+            int h = snprintf(cmd, sizeof(cmd), "P%x=", 12);
+            for (int i = 0; i < 8; i++) snprintf(cmd + h + i*2, 3, "%02x", val8[i]);
+            if (qrsp_send_packet(&g_qrsp, cmd, h+16) < 0) goto restore_regs;
+            qrsp_recv_packet(&g_qrsp, reply, sizeof(reply));
+        }
+        /* Write PC = base */
+        for (int i = 0; i < 8; i++) val8[i] = (base >> (i*8)) & 0xff;
+        {
+            char cmd[64]; char reply[16];
+            int h = snprintf(cmd, sizeof(cmd), "P%x=", 33);
+            for (int i = 0; i < 8; i++) snprintf(cmd + h + i*2, 3, "%02x", val8[i]);
+            if (qrsp_send_packet(&g_qrsp, cmd, h+16) < 0) goto restore_regs;
+            qrsp_recv_packet(&g_qrsp, reply, sizeof(reply));
+        }
+    }
+
+    /* 5. Step through dump instructions (22 csrrd + 22 st.d = 44 steps) */
+    for (int i = 0; i < 44; i++) {
+        if (qrsp_step(&g_qrsp) < 0) goto restore_regs;
+    }
+
+    /* 6. Read dumped CSR values */
+    if (qrsp_read_memory(&g_qrsp, data_addr, csr_buf, CSR_DUMP_DATA_SIZE) != CSR_DUMP_DATA_SIZE)
+        goto restore_regs;
+
+restore_regs:
+    /* 7. Restore QEMU's $t0, $t1, PC */
+    {
+        char cmd[64]; char reply[16]; int h;
+        h = snprintf(cmd, sizeof(cmd), "P%x=", 12);
+        for (int i = 0; i < 8; i++) snprintf(cmd + h + i*2, 3, "%02x", sav_t0[i]);
+        qrsp_send_packet(&g_qrsp, cmd, h+16);
+        qrsp_recv_packet(&g_qrsp, reply, sizeof(reply));
+
+        h = snprintf(cmd, sizeof(cmd), "P%x=", 13);
+        for (int i = 0; i < 8; i++) snprintf(cmd + h + i*2, 3, "%02x", sav_t1[i]);
+        qrsp_send_packet(&g_qrsp, cmd, h+16);
+        qrsp_recv_packet(&g_qrsp, reply, sizeof(reply));
+
+        h = snprintf(cmd, sizeof(cmd), "P%x=", 33);
+        for (int i = 0; i < 8; i++) snprintf(cmd + h + i*2, 3, "%02x", sav_pc[i]);
+        qrsp_send_packet(&g_qrsp, cmd, h+16);
+        qrsp_recv_packet(&g_qrsp, reply, sizeof(reply));
+    }
+
+restore_mem:
+    /* 8. Restore QEMU's original memory */
+    qrsp_write_memory(&g_qrsp, base, orig, CSR_DUMP_TOTAL);
+    return 0;
 }
 
 int diffnet_init(const char *host, int port, CPULoongArchState *env)
@@ -69,6 +212,8 @@ int diffnet_init(const char *host, int port, CPULoongArchState *env)
         diffnet_max_steps = atoi(env_val);
     if ((env_val = getenv("DIFFNET_BATCH_SIZE")))
         diffnet_batch_size = atoi(env_val);
+    if ((env_val = getenv("DIFFNET_CSR_DUMP_ADDR")))
+        g_csr_dump_addr = strtoull(env_val, NULL, 0);
     if ((env_val = getenv("DIFFNET_CMP_MASK"))) {
         diffnet_cmp_mask = 0;
         if (strstr(env_val, "all"))  diffnet_cmp_mask = CMP_ALL;
@@ -183,32 +328,33 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
         }
     }
 
-    /* ---- 5. CSR dump (CMP_CSR) ---- */
+    /* ---- 5. CSR dump (CMP_CSR) via trampoline ---- */
     if (diffnet_cmp_mask & CMP_CSR) {
         uint8_t csr_buf[256];
-        if (qrsp_read_memory(&g_qrsp, 0x1c000200, csr_buf, 176) == 176) {
-            int nonzero = 0;
-            for (int i = 0; i < 176; i++) { if (csr_buf[i]) { nonzero = 1; break; } }
-            if (nonzero) {
-                struct { const char *n; uint64_t v; } csrs[] = {
-                    {"CRMD",env->CSR_CRMD},{"PRMD",env->CSR_PRMD},{"EUEN",env->CSR_EUEN},
-                    {"ECFG",env->CSR_ECFG},{"ESTAT",env->CSR_ESTAT},{"ERA",env->CSR_ERA},
-                    {"BADV",env->CSR_BADV},{"EENTRY",env->CSR_EENTRY},
-                    {"TLBIDX",env->CSR_TLBIDX},{"TLBEHI",env->CSR_TLBEHI},
-                    {"TLBELO0",env->CSR_TLBELO0},{"TLBELO1",env->CSR_TLBELO1},
-                    {"ASID",env->CSR_ASID},{"PGDL",env->CSR_PGDL},{"PGDH",env->CSR_PGDH},
-                    {"STLBPS",env->CSR_STLBPS},{"TCFG",env->CSR_TCFG},{"TVAL",env->CSR_TVAL},
-                    {"TICLR",env->CSR_TICLR},{"LLBCTL",env->CSR_LLBCTL},
-                    {"DMW0",env->CSR_DMW[0]},{"DMW1",env->CSR_DMW[1]},
-                };
-                int ncsr = sizeof(csrs)/sizeof(csrs[0]);
-                for (int i = 0; i < ncsr; i++) {
-                    uint64_t qv = reg_from_bin(csr_buf + i * 8);
-                    if (csrs[i].v != qv) {
-                        CMP_HDR(); mismatch++;
-                        fprintf(stderr, "  csr %-8s: emu=0x%016lx qemu=0x%016lx\n",
-                                csrs[i].n, csrs[i].v, qv);
-                    }
+
+        /* Run the dump on QEMU side (save mem → inject → step → read → restore) */
+        if (qemu_csr_trampoline(csr_buf) == 0) {
+            /* Run same dump on emu side and compare CSR-by-CSR */
+            emu_csr_trampoline(env);
+
+            struct { const char *n; uint64_t v; } csrs[] = {
+                {"CRMD",env->CSR_CRMD},{"PRMD",env->CSR_PRMD},{"EUEN",env->CSR_EUEN},
+                {"ECFG",env->CSR_ECFG},{"ESTAT",env->CSR_ESTAT},{"ERA",env->CSR_ERA},
+                {"BADV",env->CSR_BADV},{"EENTRY",env->CSR_EENTRY},
+                {"TLBIDX",env->CSR_TLBIDX},{"TLBEHI",env->CSR_TLBEHI},
+                {"TLBELO0",env->CSR_TLBELO0},{"TLBELO1",env->CSR_TLBELO1},
+                {"ASID",env->CSR_ASID},{"PGDL",env->CSR_PGDL},{"PGDH",env->CSR_PGDH},
+                {"STLBPS",env->CSR_STLBPS},{"TCFG",env->CSR_TCFG},{"TVAL",env->CSR_TVAL},
+                {"TICLR",env->CSR_TICLR},{"LLBCTL",env->CSR_LLBCTL},
+                {"DMW0",env->CSR_DMW[0]},{"DMW1",env->CSR_DMW[1]},
+            };
+            int ncsr = sizeof(csrs)/sizeof(csrs[0]);
+            for (int i = 0; i < ncsr; i++) {
+                uint64_t qv = reg_from_bin(csr_buf + i * 8);
+                if (csrs[i].v != qv) {
+                    CMP_HDR(); mismatch++;
+                    fprintf(stderr, "  csr %-8s: emu=0x%016lx qemu=0x%016lx\n",
+                            csrs[i].n, csrs[i].v, qv);
                 }
             }
         }

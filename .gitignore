@@ -22,3 +22,5 @@ GTAGS
 *.gcov
 *.so
 compile_commands.json
+*.o
+*.O

@@ -11,10 +11,19 @@
 #include "diffnet.h"
 #include "qrsp.h"
 
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 bool diffnet_enabled;
 int diffnet_max_steps = 500;
 
 static qrsp_conn_t g_qrsp;
+static pid_t g_child_pid = 0;
 
 /* Decode one 8-byte register from binary buffer (little-endian).
  * bin points to 8 bytes in the g-packet binary output. */
@@ -120,4 +129,101 @@ int diffnet_step_exception(CPULoongArchState *env)
 void diffnet_cleanup(void)
 {
     qrsp_close(&g_qrsp);
+    if (g_child_pid > 0) {
+        kill(g_child_pid, SIGTERM);
+        waitpid(g_child_pid, NULL, 0);
+        g_child_pid = 0;
+        fprintf(stderr, "DIFFNET: QEMU child process terminated\n");
+    }
+}
+
+/* Poll until QEMU's GDB stub is accepting connections. */
+static int wait_for_gdb(int port, int timeout_sec)
+{
+    int sock;
+    struct sockaddr_in addr;
+    int waited = 0;
+
+    while (waited < timeout_sec) {
+        sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) return -1;
+
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        inet_aton("127.0.0.1", &addr.sin_addr);
+
+        if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            close(sock);
+            return 0;
+        }
+        close(sock);
+        usleep(500000); /* 0.5s */
+        waited++;
+    }
+    return -1;
+}
+
+int diffnet_spawn(const char *qemu_path, const char *kernel,
+                  uint64_t load_addr, int port, CPULoongArchState *env)
+{
+    fprintf(stderr, "DIFFNET: spawning QEMU: %s\n", qemu_path);
+    fprintf(stderr, "DIFFNET:   kernel=%s addr=0x%lx port=%d\n",
+            kernel, load_addr, port);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("DIFFNET: fork");
+        return -1;
+    }
+
+    if (pid == 0) {
+        /* ---- child: exec QEMU ---- */
+        int devnull = open("/dev/null", O_RDWR);
+        if (devnull >= 0) {
+            dup2(devnull, STDIN_FILENO);
+            dup2(devnull, STDOUT_FILENO);
+            /* keep stderr for diagnostics */
+            close(devnull);
+        }
+
+        char addr_str[32];
+        snprintf(addr_str, sizeof(addr_str), "0x%lx", load_addr);
+
+        char loader_arg[512];
+        snprintf(loader_arg, sizeof(loader_arg),
+                 "loader,file=%s,addr=%s", kernel, addr_str);
+
+        char gdb_arg[32];
+        snprintf(gdb_arg, sizeof(gdb_arg), "tcp::%d", port);
+
+        /* Use -gdb tcp::PORT for the GDB stub, -S to stop at entry */
+        execlp(qemu_path, qemu_path,
+               "-M", "virt",
+               "-device", loader_arg,
+               "-gdb", gdb_arg,
+               "-S",
+               "-nographic",
+               "-monitor", "none",
+               "-display", "none",
+               (char *)NULL);
+
+        /* execlp only returns on error */
+        fprintf(stderr, "DIFFNET: failed to exec QEMU: %s\n", strerror(errno));
+        _exit(1);
+    }
+
+    /* ---- parent: wait for GDB stub, then connect ---- */
+    g_child_pid = pid;
+    atexit(diffnet_cleanup);
+
+    fprintf(stderr, "DIFFNET: waiting for QEMU GDB stub on port %d...\n", port);
+    if (wait_for_gdb(port, 60) < 0) {
+        fprintf(stderr, "DIFFNET: timeout waiting for QEMU GDB stub\n");
+        diffnet_cleanup();
+        return -1;
+    }
+
+    /* Now connect via standard path */
+    return diffnet_init("127.0.0.1", port, env);
 }

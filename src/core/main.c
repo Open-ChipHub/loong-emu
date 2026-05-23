@@ -52,6 +52,7 @@ int gdbserver = 0;
 #if defined(CONFIG_DIFF_NET)
 static char diffnet_host[256];
 static int  diffnet_port = -1;
+static bool diffnet_spawn_mode = false;
 #endif
 extern int check_signal;
 extern int64_t singlestep;
@@ -1237,13 +1238,17 @@ int main(int argc, char** argv, char **envp) {
                 strncpy(buf, optarg, sizeof(buf) - 1);
                 buf[sizeof(buf) - 1] = '\0';
                 char *colon = strchr(buf, ':');
-                if (!colon) {
-                    fprintf(stderr, "-N expects host:port (e.g. localhost:1234)\n");
-                    laemu_exit(EXIT_FAILURE);
+                if (colon) {
+                    /* host:port  — connect to existing QEMU */
+                    *colon = '\0';
+                    strncpy(diffnet_host, buf, sizeof(diffnet_host) - 1);
+                    diffnet_port = atoi(colon + 1);
+                    diffnet_spawn_mode = false;
+                } else {
+                    /* port only — spawn QEMU automatically */
+                    diffnet_port = atoi(buf);
+                    diffnet_spawn_mode = true;
                 }
-                *colon = '\0';
-                strncpy(diffnet_host, buf, sizeof(diffnet_host) - 1);
-                diffnet_port = atoi(colon + 1);
                 break;
             }
 #else
@@ -1468,7 +1473,14 @@ int main(int argc, char** argv, char **envp) {
     } else {
 #if defined(CONFIG_DIFF_NET)
         if (diffnet_port > 0) {
-            if (diffnet_init(diffnet_host, diffnet_port, env) < 0) {
+            int ret;
+            if (diffnet_spawn_mode) {
+                ret = diffnet_spawn(DIFFNET_QEMU_PATH, kernel_filename,
+                                    load_bios_entry, diffnet_port, env);
+            } else {
+                ret = diffnet_init(diffnet_host, diffnet_port, env);
+            }
+            if (ret < 0) {
                 laemu_exit(EXIT_FAILURE);
             }
             diffnet_enabled = true;

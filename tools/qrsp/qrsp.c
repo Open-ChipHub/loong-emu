@@ -276,3 +276,54 @@ uint64_t qrsp_hex_decode_le64(const char *hex)
     }
     return val;
 }
+
+int qrsp_continue(qrsp_conn_t *conn)
+{
+    if (qrsp_send_packet(conn, "c", 1) < 0) return -1;
+
+    char reply[256];
+    int n = qrsp_recv_packet(conn, reply, sizeof(reply));
+    if (n < 0) return -1;
+
+    if (reply[0] != 'T' && reply[0] != 'S') {
+        if (reply[0] == 'W' || reply[0] == 'X') {
+            fprintf(stderr, "qrsp: QEMU exited (packet: %s)\n", reply);
+        } else {
+            fprintf(stderr, "qrsp: unexpected continue reply: %s\n", reply);
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int qrsp_set_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind)
+{
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "Z%d,%lx,4", kind, addr);
+    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+
+    char reply[16];
+    int n = qrsp_recv_packet(conn, reply, sizeof(reply));
+    if (n < 0) return -1;
+    if (strcmp(reply, "OK") != 0) {
+        fprintf(stderr, "qrsp: set breakpoint failed: %s\n", reply);
+        return -1;
+    }
+    return 0;
+}
+
+int qrsp_remove_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind)
+{
+    char cmd[64];
+    snprintf(cmd, sizeof(cmd), "z%d,%lx,4", kind, addr);
+    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+
+    char reply[16];
+    int n = qrsp_recv_packet(conn, reply, sizeof(reply));
+    if (n < 0) return -1;
+    if (strcmp(reply, "OK") != 0) {
+        fprintf(stderr, "qrsp: remove breakpoint failed: %s\n", reply);
+        return -1;
+    }
+    return 0;
+}

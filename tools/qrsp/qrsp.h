@@ -46,6 +46,14 @@ int  qrsp_step(qrsp_conn_t *conn);
  * Returns 0 on success, -1 on error. */
 int  qrsp_read_g_packet(qrsp_conn_t *conn, uint8_t *bin_buf, int buf_size);
 
+/* Continue execution until breakpoint or exit ("c" packet). */
+int  qrsp_continue(qrsp_conn_t *conn);
+
+/* Set ("Z") or remove ("z") a breakpoint/watchpoint.
+ * kind: 0=software, 1=hardware, 2=write, 3=read, 4=access */
+int  qrsp_set_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind);
+int  qrsp_remove_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind);
+
 /* Utility: decode a 16-char hex string to uint64_t (little-endian). */
 uint64_t qrsp_hex_decode_le64(const char *hex);
 

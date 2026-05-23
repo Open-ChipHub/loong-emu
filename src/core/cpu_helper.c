@@ -299,8 +299,9 @@ static hwaddr dmw_va2pa(CPULoongArchState *env, target_ulong va,
     if (is_la64(env)) {
         return va & TARGET_VIRT_MASK;
     } else {
+        uint32_t va32 = (uint32_t)va;
         uint32_t pseg = FIELD_EX32(dmw, CSR_DMW_32, PSEG);
-        return (va & MAKE_64BIT_MASK(0, R_CSR_DMW_32_VSEG_SHIFT)) | \
+        return (va32 & MAKE_64BIT_MASK(0, R_CSR_DMW_32_VSEG_SHIFT)) | \
             (pseg << R_CSR_DMW_32_VSEG_SHIFT);
     }
 }
@@ -324,6 +325,7 @@ int get_physical_address(CPULoongArchState *env, hwaddr *physical,
     }
 
     plv = kernel_mode | (user_mode << R_CSR_DMW_PLV3_SHIFT);
+    if (!is_la64(env)) address = (uint32_t)address;
     if (is_la64(env)) {
         base_v = address >> R_CSR_DMW_64_VSEG_SHIFT;
     } else {
@@ -586,6 +588,7 @@ int get_physical_address_debug(CPULoongArchState *env, hwaddr *physical,
     }
 
     plv = kernel_mode | (user_mode << R_CSR_DMW_PLV3_SHIFT);
+    if (!is_la64(env)) address = (uint32_t)address;
     if (is_la64(env)) {
         base_v = address >> R_CSR_DMW_64_VSEG_SHIFT;
     } else {

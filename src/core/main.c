@@ -326,7 +326,7 @@ bool load_elf(const char* filename, uint64_t* entry_addr) {
                 file_size = ph->p_filesz; data = (uint8_t*)malloc(file_size);
                 if (lseek(fd, ph->p_offset, SEEK_SET) < 0) { free(phdr); goto fail; }
                 if (read(fd, data, file_size) != (ssize_t)file_size) { free(phdr); goto fail; }
-                memcpy(ram + (ph->p_paddr & 0xffffffff), data, file_size);
+                memcpy(ram + (ph->p_paddr & (is_elf32 ? 0x1fffffff : 0xffffffff)), data, file_size);
                 free(data); data = NULL;
             }
         }
@@ -373,14 +373,15 @@ bool load_elf_user(const char* filename, uint64_t* entry_addr) {
         e_ident[3] != ELFMAG3) {
             lsassertm(0, "%s is not an elf\n", filename);
     }
-    lsassert(e_ident[EI_CLASS] == ELFCLASS64);
+    bool is_elf32 = (e_ident[EI_CLASS] == ELFCLASS32);
+    lsassert(is_elf32 || e_ident[EI_CLASS] == ELFCLASS64);
     lseek(fd, 0, SEEK_SET);
 
 
     if (read(fd, &ehdr, sizeof(ehdr)) != sizeof(ehdr))
         goto fail;
 
-    *entry_addr = ehdr.e_entry;
+    *entry_addr = is_elf32 ? ((Elf32_Ehdr*)&ehdr)->e_entry & 0x1fffffff : ehdr.e_entry;
 
     size = ehdr.e_phnum * sizeof(phdr[0]);
     e_phoff = ehdr.e_phoff;
@@ -921,7 +922,7 @@ int exec_env(CPULoongArchState *env) {
                     static int emu_max_inst = -1;
                     if (emu_max_inst < 0) {
                         const char *v = getenv("EMU_MAX_INSTRS");
-                        emu_max_inst = v ? atoi(v) : 0;
+                        emu_max_inst = v ? atoi(v) : INT_MAX;
                     }
                     if (emu_max_inst > 0 && env->icount >= emu_max_inst)
                         laemu_exit(0);
@@ -1383,8 +1384,12 @@ int main(int argc, char** argv, char **envp) {
         else if (strcmp(arch_name, "loongarch32s") == 0) loongarch_la32s_initfn(env);
         else if (strcmp(arch_name, "la464") == 0) loongarch_la464_initfn(env);
         else if (strcmp(arch_name, "openc910") == 0) loongarch_openc910_initfn(env);
-        else { fprintf(stderr, "Unknown arch: %s\n", arch_name); loongarch_core_initfn(env); }
-    } else { loongarch_core_initfn(env); }
+        else { fprintf(stderr, "Unknown arch: %s\n", arch_name); if (arch_name && strcmp(arch_name,"loongarch32r")==0) loongarch_la32r_initfn(env);
+    else if (arch_name && strcmp(arch_name,"loongarch32s")==0) loongarch_la32s_initfn(env);
+    else loongarch_core_initfn(env); }
+    } else { if (arch_name && strcmp(arch_name,"loongarch32r")==0) loongarch_la32r_initfn(env);
+    else if (arch_name && strcmp(arch_name,"loongarch32s")==0) loongarch_la32s_initfn(env);
+    else loongarch_core_initfn(env); }
     cpu_clear_tc(env);
     env->timer_counter = INT64_MAX;
 #ifndef CONFIG_USER_ONLY

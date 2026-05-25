@@ -1,5 +1,6 @@
 CC=gcc
-OPT_FLAG = -O3 -flto=auto
+OPT_FLAG = -O0 #-flto=auto
+DEBUG = 1
 ifeq (${DEBUG},1)
 	OPT_FLAG = -Og
 endif

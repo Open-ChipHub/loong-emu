@@ -1,7 +1,7 @@
 # Emu Instruction Execution Report
 
-**Total instructions executed**: 200000  
-**Distinct executed**: 13 / 1690 static ISA  
+**Total instructions executed**: 878729  
+**Distinct executed**: 43 / 1690 static ISA  
 
 ## Exceptions & Interrupts
 
@@ -18,30 +18,61 @@
 
 | Category | Count | % |
 |----------|-------|----|
-| Arithmetic/Shift (Ch3.1) | 66682 | 33.34% |
-| Branch/Jump (Ch3.3) | 66653 | 33.33% |
-| Load/Store (Ch3.4) | 66654 | 33.33% |
-| Privileged (Ch6) | 11 | 0.01% |
+| Arithmetic/Shift (Ch3.1) | 345562 | 39.33% |
+| Branch/Jump (Ch3.3) | 241551 | 27.49% |
+| Load/Store (Ch3.4) | 291472 | 33.17% |
+| Barrier (Ch3.6) | 72 | 0.01% |
+| Privileged (Ch6) | 72 | 0.01% |
 
 ## Executed Instructions
 
 | # | Instruction | Category | Count | % |
 |---|------------|----------|-------|----|
-| 1 | `addi_w` | Arithmetic/Shift (Ch3.1) | **66655** | **33.33%** |
-| 2 | `and` | Arithmetic/Shift (Ch3.1) | **3** | **0.00%** |
-| 3 | `lu12i_w` | Arithmetic/Shift (Ch3.1) | **6** | **0.00%** |
-| 4 | `nor` | Arithmetic/Shift (Ch3.1) | **1** | **0.00%** |
-| 5 | `or` | Arithmetic/Shift (Ch3.1) | **4** | **0.00%** |
-| 6 | `ori` | Arithmetic/Shift (Ch3.1) | **7** | **0.00%** |
-| 7 | `pcaddu12i` | Arithmetic/Shift (Ch3.1) | **4** | **0.00%** |
-| 8 | `slli_w` | Arithmetic/Shift (Ch3.1) | **2** | **0.00%** |
-| 9 | `bne` | Branch/Jump (Ch3.3) | **66652** | **33.33%** |
-| 10 | `jirl` | Branch/Jump (Ch3.3) | **1** | **0.00%** |
-| 11 | `st_w` | Load/Store (Ch3.4) | **66654** | **33.33%** |
-| 12 | `csrrd` | Privileged (Ch6) | **1** | **0.00%** |
-| 13 | `csrwr` | Privileged (Ch6) | **10** | **0.01%** |
+| 1 | `add_w` | Arithmetic/Shift (Ch3.1) | **10893** | **1.24%** |
+| 2 | `addi_w` | Arithmetic/Shift (Ch3.1) | **258367** | **29.40%** |
+| 3 | `and` | Arithmetic/Shift (Ch3.1) | **1979** | **0.23%** |
+| 4 | `andi` | Arithmetic/Shift (Ch3.1) | **6411** | **0.73%** |
+| 5 | `lu12i_w` | Arithmetic/Shift (Ch3.1) | **2354** | **0.27%** |
+| 6 | `mul_w` | Arithmetic/Shift (Ch3.1) | **22** | **0.00%** |
+| 7 | `mulh_wu` | Arithmetic/Shift (Ch3.1) | **11** | **0.00%** |
+| 8 | `nor` | Arithmetic/Shift (Ch3.1) | **189** | **0.02%** |
+| 9 | `or` | Arithmetic/Shift (Ch3.1) | **34335** | **3.91%** |
+| 10 | `ori` | Arithmetic/Shift (Ch3.1) | **1760** | **0.20%** |
+| 11 | `pcaddu12i` | Arithmetic/Shift (Ch3.1) | **1979** | **0.23%** |
+| 12 | `sll_w` | Arithmetic/Shift (Ch3.1) | **210** | **0.02%** |
+| 13 | `slli_w` | Arithmetic/Shift (Ch3.1) | **21650** | **2.46%** |
+| 14 | `sltu` | Arithmetic/Shift (Ch3.1) | **54** | **0.01%** |
+| 15 | `sltui` | Arithmetic/Shift (Ch3.1) | **1** | **0.00%** |
+| 16 | `srai_w` | Arithmetic/Shift (Ch3.1) | **104** | **0.01%** |
+| 17 | `srl_w` | Arithmetic/Shift (Ch3.1) | **190** | **0.02%** |
+| 18 | `srli_w` | Arithmetic/Shift (Ch3.1) | **2586** | **0.29%** |
+| 19 | `sub_w` | Arithmetic/Shift (Ch3.1) | **1077** | **0.12%** |
+| 20 | `xor` | Arithmetic/Shift (Ch3.1) | **1376** | **0.16%** |
+| 21 | `xori` | Arithmetic/Shift (Ch3.1) | **14** | **0.00%** |
+| 22 | `b` | Branch/Jump (Ch3.3) | **2331** | **0.27%** |
+| 23 | `beq` | Branch/Jump (Ch3.3) | **7654** | **0.87%** |
+| 24 | `bge` | Branch/Jump (Ch3.3) | **109** | **0.01%** |
+| 25 | `bgeu` | Branch/Jump (Ch3.3) | **3241** | **0.37%** |
+| 26 | `bl` | Branch/Jump (Ch3.3) | **5395** | **0.61%** |
+| 27 | `blt` | Branch/Jump (Ch3.3) | **1816** | **0.21%** |
+| 28 | `bltu` | Branch/Jump (Ch3.3) | **9025** | **1.03%** |
+| 29 | `bne` | Branch/Jump (Ch3.3) | **206179** | **23.46%** |
+| 30 | `jirl` | Branch/Jump (Ch3.3) | **5801** | **0.66%** |
+| 31 | `ld_bu` | Load/Store (Ch3.4) | **73849** | **8.40%** |
+| 32 | `ld_hu` | Load/Store (Ch3.4) | **8** | **0.00%** |
+| 33 | `ld_w` | Load/Store (Ch3.4) | **11736** | **1.34%** |
+| 34 | `ll_w` | Load/Store (Ch3.4) | **61** | **0.01%** |
+| 35 | `sc_w` | Load/Store (Ch3.4) | **54** | **0.01%** |
+| 36 | `st_b` | Load/Store (Ch3.4) | **43944** | **5.00%** |
+| 37 | `st_h` | Load/Store (Ch3.4) | **16** | **0.00%** |
+| 38 | `st_w` | Load/Store (Ch3.4) | **161804** | **18.41%** |
+| 39 | `ibar` | Barrier (Ch3.6) | **72** | **0.01%** |
+| 40 | `csrrd` | Privileged (Ch6) | **16** | **0.00%** |
+| 41 | `csrwr` | Privileged (Ch6) | **20** | **0.00%** |
+| 42 | `csrxchg` | Privileged (Ch6) | **35** | **0.00%** |
+| 43 | `invtlb` | Privileged (Ch6) | **1** | **0.00%** |
 
-*13 distinct instructions executed.*
+*43 distinct instructions executed.*
 
 ## Complete ISA Reference
 
@@ -53,15 +84,15 @@
 | # | Instruction | Count |
 |---|------------|-------|
 | 1 | `add_d` | 0 |
-| 2 | `add_w` | 0 |
+| 2 | `add_w` | **10893** |
 | 3 | `addi_d` | 0 |
-| 4 | `addi_w` | **66655** |
+| 4 | `addi_w` | **258367** |
 | 5 | `addu16i_d` | 0 |
 | 6 | `alsl_d` | 0 |
 | 7 | `alsl_w` | 0 |
 | 8 | `alsl_wu` | 0 |
-| 9 | `and` | **3** |
-| 10 | `andi` | 0 |
+| 9 | `and` | **1979** |
+| 10 | `andi` | **6411** |
 | 11 | `andn` | 0 |
 | 12 | `asrtgt_d` | 0 |
 | 13 | `asrtle_d` | 0 |
@@ -101,7 +132,7 @@
 | 47 | `ext_w_h` | 0 |
 | 48 | `ldptr_d` | 0 |
 | 49 | `ldptr_w` | 0 |
-| 50 | `lu12i_w` | **6** |
+| 50 | `lu12i_w` | **2354** |
 | 51 | `lu32i_d` | 0 |
 | 52 | `lu52i_d` | 0 |
 | 53 | `maskeqz` | 0 |
@@ -123,19 +154,19 @@
 | 69 | `movgr2fr_w` | 0 |
 | 70 | `movgr2frh_w` | 0 |
 | 71 | `mul_d` | 0 |
-| 72 | `mul_w` | 0 |
+| 72 | `mul_w` | **22** |
 | 73 | `mulh_d` | 0 |
 | 74 | `mulh_du` | 0 |
 | 75 | `mulh_w` | 0 |
-| 76 | `mulh_wu` | 0 |
+| 76 | `mulh_wu` | **11** |
 | 77 | `mulw_d_w` | 0 |
 | 78 | `mulw_d_wu` | 0 |
-| 79 | `nor` | **1** |
-| 80 | `or` | **4** |
-| 81 | `ori` | **7** |
+| 79 | `nor` | **189** |
+| 80 | `or` | **34335** |
+| 81 | `ori` | **1760** |
 | 82 | `orn` | 0 |
 | 83 | `pcaddi` | 0 |
-| 84 | `pcaddu12i` | **4** |
+| 84 | `pcaddu12i` | **1979** |
 | 85 | `pcaddu18i` | 0 |
 | 86 | `pcalau12i` | 0 |
 | 87 | `rdtime_d` | 0 |
@@ -152,59 +183,59 @@
 | 98 | `rotri_d` | 0 |
 | 99 | `rotri_w` | 0 |
 | 100 | `sll_d` | 0 |
-| 101 | `sll_w` | 0 |
+| 101 | `sll_w` | **210** |
 | 102 | `slli_d` | 0 |
-| 103 | `slli_w` | **2** |
+| 103 | `slli_w` | **21650** |
 | 104 | `slt` | 0 |
 | 105 | `slti` | 0 |
-| 106 | `sltu` | 0 |
-| 107 | `sltui` | 0 |
+| 106 | `sltu` | **54** |
+| 107 | `sltui` | **1** |
 | 108 | `sra_d` | 0 |
 | 109 | `sra_w` | 0 |
 | 110 | `srai_d` | 0 |
-| 111 | `srai_w` | 0 |
+| 111 | `srai_w` | **104** |
 | 112 | `srl_d` | 0 |
-| 113 | `srl_w` | 0 |
+| 113 | `srl_w` | **190** |
 | 114 | `srli_d` | 0 |
-| 115 | `srli_w` | 0 |
+| 115 | `srli_w` | **2586** |
 | 116 | `sub_d` | 0 |
-| 117 | `sub_w` | 0 |
+| 117 | `sub_w` | **1077** |
 | 118 | `syscall` | 0 |
-| 119 | `xor` | 0 |
-| 120 | `xori` | 0 |
+| 119 | `xor` | **1376** |
+| 120 | `xori` | **14** |
 
-*8/120 executed in this category.*
+*21/120 executed in this category.*
 
 ### Branch/Jump (Ch3.3)
 
 | # | Instruction | Count |
 |---|------------|-------|
-| 1 | `b` | 0 |
+| 1 | `b` | **2331** |
 | 2 | `bceqz` | 0 |
 | 3 | `bcnez` | 0 |
-| 4 | `beq` | 0 |
+| 4 | `beq` | **7654** |
 | 5 | `beqz` | 0 |
-| 6 | `bge` | 0 |
-| 7 | `bgeu` | 0 |
-| 8 | `bl` | 0 |
-| 9 | `blt` | 0 |
-| 10 | `bltu` | 0 |
-| 11 | `bne` | **66652** |
+| 6 | `bge` | **109** |
+| 7 | `bgeu` | **3241** |
+| 8 | `bl` | **5395** |
+| 9 | `blt` | **1816** |
+| 10 | `bltu` | **9025** |
+| 11 | `bne` | **206179** |
 | 12 | `bnez` | 0 |
-| 13 | `jirl` | **1** |
+| 13 | `jirl` | **5801** |
 
-*2/13 executed in this category.*
+*9/13 executed in this category.*
 
 ### Load/Store (Ch3.4)
 
 | # | Instruction | Count |
 |---|------------|-------|
 | 1 | `ld_b` | 0 |
-| 2 | `ld_bu` | 0 |
+| 2 | `ld_bu` | **73849** |
 | 3 | `ld_d` | 0 |
 | 4 | `ld_h` | 0 |
-| 5 | `ld_hu` | 0 |
-| 6 | `ld_w` | 0 |
+| 5 | `ld_hu` | **8** |
+| 6 | `ld_w` | **11736** |
 | 7 | `ld_wu` | 0 |
 | 8 | `ldgt_b` | 0 |
 | 9 | `ldgt_d` | 0 |
@@ -222,15 +253,15 @@
 | 21 | `ldx_w` | 0 |
 | 22 | `ldx_wu` | 0 |
 | 23 | `ll_d` | 0 |
-| 24 | `ll_w` | 0 |
+| 24 | `ll_w` | **61** |
 | 25 | `preld` | 0 |
 | 26 | `preldx` | 0 |
 | 27 | `sc_d` | 0 |
-| 28 | `sc_w` | 0 |
-| 29 | `st_b` | 0 |
+| 28 | `sc_w` | **54** |
+| 29 | `st_b` | **43944** |
 | 30 | `st_d` | 0 |
-| 31 | `st_h` | 0 |
-| 32 | `st_w` | **66654** |
+| 31 | `st_h` | **16** |
+| 32 | `st_w` | **161804** |
 | 33 | `stgt_b` | 0 |
 | 34 | `stgt_d` | 0 |
 | 35 | `stgt_h` | 0 |
@@ -246,7 +277,7 @@
 | 45 | `stx_h` | 0 |
 | 46 | `stx_w` | 0 |
 
-*1/46 executed in this category.*
+*8/46 executed in this category.*
 
 ### Atomic (Ch3.5)
 
@@ -296,9 +327,9 @@
 | # | Instruction | Count |
 |---|------------|-------|
 | 1 | `dbar` | 0 |
-| 2 | `ibar` | 0 |
+| 2 | `ibar` | **72** |
 
-*0/2 executed in this category.*
+*1/2 executed in this category.*
 
 ### Float (Ch4)
 
@@ -1776,12 +1807,12 @@
 |---|------------|-------|
 | 1 | `cacop` | 0 |
 | 2 | `cpucfg` | 0 |
-| 3 | `csrrd` | **1** |
-| 4 | `csrwr` | **10** |
-| 5 | `csrxchg` | 0 |
+| 3 | `csrrd` | **16** |
+| 4 | `csrwr` | **20** |
+| 5 | `csrxchg` | **35** |
 | 6 | `ertn` | 0 |
 | 7 | `idle` | 0 |
-| 8 | `invtlb` | 0 |
+| 8 | `invtlb` | **1** |
 | 9 | `iocsrrd_b` | 0 |
 | 10 | `iocsrrd_d` | 0 |
 | 11 | `iocsrrd_h` | 0 |
@@ -1799,5 +1830,5 @@
 | 23 | `tlbsrch` | 0 |
 | 24 | `tlbwr` | 0 |
 
-*2/24 executed in this category.*
+*4/24 executed in this category.*
 

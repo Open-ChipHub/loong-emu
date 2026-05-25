@@ -2067,6 +2067,11 @@ static bool trans_jirl(CPULoongArchState *env, arg_jirl *restrict a) {
 }
 static bool trans_b(CPULoongArchState *env, arg_b *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
+#ifndef CONFIG_DIFF
+    if (!a->offs) {
+        laemu_exit(EXIT_SUCCESS);
+    }
+#endif
     env->pc += a->offs;
     return true;
 }

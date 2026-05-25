@@ -1423,12 +1423,14 @@ int main(int argc, char** argv, char **envp) {
     else loongarch_core_initfn(env); }
     cpu_clear_tc(env);
     env->timer_counter = INT64_MAX;
-#ifndef CONFIG_USER_ONLY
-    env->timerid = timerid;
-    if (serial_plus) {
-        qemu_irq irq = qemu_allocate_irq(loongarch_cpu_set_irq, (void*)env, 7);
 
-        ss = simple_serial_init(0x1FF10000, irq, 115200);
+#ifndef CONFIG_USER_ONLY    
+    env->timerid = timerid;
+    
+    if (serial_plus) {
+        qemu_irq irq = qemu_allocate_irq(loongarch_cpu_set_irq, (void*)env, 3);
+
+        // ss = simple_serial_init(0x1FF10000, irq, 115200);
         ss = simple_serial_init(0x1FE00000, irq, 115200);
 
         struct sigevent sev;

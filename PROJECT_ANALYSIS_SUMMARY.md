@@ -61,3 +61,110 @@ README 标称支持：
 ## 总体判断
 
 这是一个偏研究/验证用途的 LoongArch64 解释器，核心路径清晰，kernel mode、MMU、CSR、GDB/difftest 都有框架；但工程化质量还有明显缺口，尤其是构建、参数解析、未实现指令和边界行为。下一步最值得先修的是插件构建和 `getopt` fallthrough，这两个属于低成本高收益问题。
+
+## LA32R 内核启动到 clocksource 后无输出的问题记录
+
+目标内核源码路径：
+
+- `/home/airxs/user/loongsonedu/linux/linux-6.11.0-la32r-emu`
+
+可用启动命令：
+
+```bash
+./build/la_emu_kernel -z -m 16 -A loongarch32r -k /home/airxs/user/loongsonedu/linux/linux-6.11.0-la32r-emu/vmlinux
+```
+
+注意：不要加 `-s`。当前 `serial_plus` 路径会在 `serial_check_io()` 中 abort；普通串口路径可以输出内核日志。
+
+### 现象
+
+未开启 initcall 调试时，日志最后常见输出是：
+
+```text
+clocksource: Switched to clocksource Constant
+```
+
+看起来像卡在 clocksource 切换，但这是误判。给内核 bootargs 加上 `initcall_debug` 后可以看到：
+
+```text
+calling  clocksource_done_booting+0x0/0x50 @ 1
+clocksource: Switched to clocksource Constant
+initcall clocksource_done_booting+0x0/0x50 returned 0 after 75 usecs
+...
+calling  jent_mod_init+0x0/0x114 @ 1
+random: crng init done
+```
+
+也就是说，`clocksource_done_booting()` 已经正常返回，真正长时间不返回的是后面的 `jent_mod_init()`。
+
+### 根因判断
+
+`jent_mod_init()` 来自内核 Jitter RNG：
+
+- `crypto/jitterentropy-kcapi.c`
+- 其初始化调用 `jent_entropy_init(CONFIG_CRYPTO_JITTERENTROPY_OSR, 0, desc, NULL)`
+
+Jitter RNG 依赖 CPU/timer 的微小时间抖动作为熵源。当前模拟器的时间源和执行节奏过于确定，缺少真实硬件上的自然 jitter，导致 Jitter RNG 初始化/健康检测在模拟器中长时间无法完成。因此它表现为启动卡住。
+
+配置上也不能简单只关 `CONFIG_CRYPTO_JITTERENTROPY`，因为 Kconfig 依赖会重新选中它：
+
+```text
+CRYPTO_RNG_DEFAULT -> CRYPTO_DRBG_MENU -> CRYPTO_DRBG -> CRYPTO_JITTERENTROPY
+```
+
+对应位置：
+
+- `crypto/Kconfig:112`：`CRYPTO_RNG_DEFAULT` select `CRYPTO_DRBG_MENU`
+- `crypto/Kconfig:1237`：`CRYPTO_DRBG`
+- `crypto/Kconfig:1241`：`CRYPTO_DRBG` select `CRYPTO_JITTERENTROPY`
+
+### 当前验证修复
+
+在内核 DTS 中给 bootargs 添加 initcall 黑名单，跳过 `jent_mod_init`：
+
+文件：
+
+- `/home/airxs/user/loongsonedu/linux/linux-6.11.0-la32r-emu/arch/loongarch/boot/dts/loongson32_emu.dts`
+
+当前 bootargs：
+
+```dts
+bootargs = "console=ttyS0,115200 init=/init loglevel=8 initcall_debug initcall_blacklist=jent_mod_init swiotlb=64 dhash_entries=16384 ihash_entries=16384";
+```
+
+重新编译内核：
+
+```bash
+cd /home/airxs/user/loongsonedu/linux/linux-6.11.0-la32r-emu
+make -j2
+```
+
+验证日志：
+
+```text
+blacklisting initcall jent_mod_init
+...
+clocksource: Switched to clocksource Constant
+initcall clocksource_done_booting+0x0/0x50 returned 0 after 75 usecs
+...
+initcall jent_mod_init blacklisted
+calling  io_uring_init+0x0/0x118 @ 1
+```
+
+这证明 `clocksource` 不是卡点，跳过 `jent_mod_init` 后内核能继续执行后续 initcall。
+
+### 后续建议
+
+短期为了启动内核，可以继续使用：
+
+```text
+initcall_blacklist=jent_mod_init
+```
+
+长期更合理的方向有三个：
+
+1. 在模拟器中提供可用随机源，例如 virtio-rng/hwrng 或宿主随机数注入。
+2. 让模拟器 timer/rdtime 行为更接近真实硬件，至少能满足 Jitter RNG 的熵源检测。
+3. 为 emu 内核配置裁剪 crypto RNG 依赖，避免内建 Jitter RNG；但需要处理 `CRYPTO_RNG_DEFAULT` 和 `CRYPTO_DRBG` 的依赖链。
+
+跳过 `jent_mod_init` 后，90 秒限时测试已经能执行到 late initcall 后段，最后无输出位置已经不是本次 `clocksource/Jitter RNG` 问题，需要后续单独定位是否卡在 `async_synchronize_full()`、释放 initmem、rootfs 挂载或进入 `/init` 后无输出。

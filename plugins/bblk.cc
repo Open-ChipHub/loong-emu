@@ -5,7 +5,7 @@
 #include <set>
 
 extern "C" {
-#include "../plugin.h"
+#include "plugin.h"
 }
 
 using namespace std;

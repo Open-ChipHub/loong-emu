@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -g -O2 -Werror -fPIC -std=c++17
+CXXFLAGS = -g -O2 -Werror -fPIC -std=c++17 -I../include
 
 SRCS = $(wildcard *.cc)
 LIBS = $(patsubst %.cc,lib%.so,$(SRCS))

@@ -779,6 +779,11 @@ int has_opend = 0;
 int check_dump_enable = 0;
 uint64_t dbg_prev_pc = 0;
 
+/* Trace PC logging */
+static bool trace_enabled;
+static char trace_log_name[PATH_MAX];
+static FILE *trace_file;
+
 /* Debug watch variables -- set via gdb. */
 unsigned long watch_pc;
 unsigned long watch_era;
@@ -834,6 +839,10 @@ int exec_env(CPULoongArchState *env) {
 
                 if (unlikely(qemu_loglevel_mask(CPU_LOG_EXEC))) {
                     qemu_log("pc:%lx\n", env->pc);
+                }
+                if (trace_file) {
+                    fprintf(trace_file, "%lx\n", env->pc);
+                    fflush(trace_file);
                 }
                 if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_CPU))) {
                     show_register(env);
@@ -1207,6 +1216,28 @@ CPUState *current_cpu;
 
 int main(int argc, char** argv, char **envp) {
     logfile = stderr;
+
+    /* Handle long options not supported by getopt */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--trace") == 0) {
+            trace_enabled = true;
+            argv[i] = NULL;
+        } else if (strcmp(argv[i], "--trance_log_name") == 0 && i + 1 < argc) {
+            strncpy(trace_log_name, argv[i + 1], PATH_MAX - 1);
+            trace_log_name[PATH_MAX - 1] = '\0';
+            argv[i] = NULL;
+            argv[++i] = NULL;
+        }
+    }
+    /* Compact argv: remove NULL entries */
+    int new_argc = 1;
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] != NULL) {
+            argv[new_argc++] = argv[i];
+        }
+    }
+    argc = new_argc;
+
     if (argc < 2) {
         usage();
     }
@@ -1521,6 +1552,16 @@ int main(int argc, char** argv, char **envp) {
         }
     }
 #endif
+    if (trace_enabled) {
+        const char *fname = trace_log_name[0] ? trace_log_name : "trace_pc.log";
+        trace_file = fopen(fname, "w");
+        if (!trace_file) {
+            fprintf(stderr, "cannot open trace log %s\n", fname);
+            laemu_exit(EXIT_FAILURE);
+        }
+        setvbuf(trace_file, NULL, _IONBF, 0);
+        fprintf(stderr, "trace: logging PC to %s\n", fname);
+    }
     if (gdbserver) {
 #if defined(CONFIG_GDB)
 #ifndef CONFIG_USER_ONLY
@@ -1552,6 +1593,10 @@ int main(int argc, char** argv, char **envp) {
         }
 #endif
         exec_env(env);
+    }
+    if (trace_file) {
+        fclose(trace_file);
+        trace_file = NULL;
     }
 #if defined(CONFIG_DIFF_NET)
     diffnet_cleanup();

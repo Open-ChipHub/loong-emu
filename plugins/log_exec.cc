@@ -1,7 +1,7 @@
 #include <iostream>
 
 extern "C" {
-#include "../plugin.h"
+#include "plugin.h"
 }
 
 

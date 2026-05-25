@@ -928,10 +928,10 @@ int exec_env(CPULoongArchState *env) {
 
                 /* Standalone step limit (no diffnet needed) */
                 {
-                    static int emu_max_inst = -1;
+                    static long emu_max_inst = -1;
                     if (emu_max_inst < 0) {
                         const char *v = getenv("EMU_MAX_INSTRS");
-                        emu_max_inst = v ? atoi(v) : INT_MAX;
+                        emu_max_inst = v ? atoi(v) : INT64_MAX;
                     }
                     if (emu_max_inst > 0 && env->icount >= emu_max_inst)
                         laemu_exit(0);

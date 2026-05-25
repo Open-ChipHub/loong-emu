@@ -14,6 +14,7 @@
 #include "cpu.h"
 #include "internals.h"
 #include "difftest-ref.h"
+#include "smp.h"
 
 #define REF_TO_DUT 0
 #define DUT_TO_REF 1
@@ -56,6 +57,15 @@ bool addr_in_ram(hwaddr pa)
     return pa < ram_size_bytes;
 }
 
+bool addr_range_in_ram(hwaddr pa, unsigned size)
+{
+    if (size == 0 || pa + size - 1 < pa) {
+        return false;
+    }
+
+    return addr_in_ram(pa + size - 1);
+}
+
 void difftest_set_ramsize(size_t n)
 {
     saved_ram_size = n;
@@ -71,6 +81,9 @@ void difftest_init(void)
     LoongArchCPU* cpu = aligned_alloc(64, sizeof(LoongArchCPU));
     memset(cpu, 0, sizeof(LoongArchCPU));
     CPUState *cs = CPU(cpu);
+    cs->cluster_index = -1;
+    cpu_register(cs);
+    current_cpu = cs;
     CPULoongArchState* env = &cpu->env;
     cs->env = env;
     cpu_reset(cs);

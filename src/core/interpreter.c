@@ -10,6 +10,7 @@
 #include "insn_stats.h"
 
 #include "util.h"
+#include "smp.h"
 
 #define g_assert_not_reached abort
 #define g_assert assert
@@ -2390,53 +2391,51 @@ static bool trans_csrxchg(CPULoongArchState *env, arg_csrxchg *restrict a) {
 }
 static bool trans_iocsrrd_b(CPULoongArchState *env, arg_iocsrrd_b *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
+    env->gpr[a->rd] = loongarch_iocsr_read(env, env->gpr[a->rj], 1);
     env->pc += 4;
     return true;
 }
 static bool trans_iocsrrd_h(CPULoongArchState *env, arg_iocsrrd_h *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
-    a->rd = 0;
+    env->gpr[a->rd] = loongarch_iocsr_read(env, env->gpr[a->rj], 2);
     env->pc += 4;
     return true;
 }
 static bool trans_iocsrrd_w(CPULoongArchState *env, arg_iocsrrd_w *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
-    a->rd = 0;
+    env->gpr[a->rd] = loongarch_iocsr_read(env, env->gpr[a->rj], 4);
     env->pc += 4;
     return true;
 }
 static bool trans_iocsrrd_d(CPULoongArchState *env, arg_iocsrrd_d *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
-    a->rd = 0;
+    CHECK_LA64();
+    env->gpr[a->rd] = loongarch_iocsr_read(env, env->gpr[a->rj], 8);
     env->pc += 4;
     return true;
 }
 static bool trans_iocsrwr_b(CPULoongArchState *env, arg_iocsrwr_b *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
-    a->rd = 0;
+    loongarch_iocsr_write(env, env->gpr[a->rj], env->gpr[a->rd], 1);
     env->pc += 4;
     return true;
 }
 static bool trans_iocsrwr_h(CPULoongArchState *env, arg_iocsrwr_h *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
+    loongarch_iocsr_write(env, env->gpr[a->rj], env->gpr[a->rd], 2);
     env->pc += 4;
     return true;
 }
 static bool trans_iocsrwr_w(CPULoongArchState *env, arg_iocsrwr_w *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
+    loongarch_iocsr_write(env, env->gpr[a->rj], env->gpr[a->rd], 4);
     env->pc += 4;
     return true;
 }
 static bool trans_iocsrwr_d(CPULoongArchState *env, arg_iocsrwr_d *restrict a) {
     CHECK_PLV(0);
-    fprintf(stderr, "NOT IMPLEMENTED %s pc:%lx addr:%lx\n", __func__, env->pc, env->gpr[a->rj]);
+    CHECK_LA64();
+    loongarch_iocsr_write(env, env->gpr[a->rj], env->gpr[a->rd], 8);
     env->pc += 4;
     return true;
 }
@@ -2514,6 +2513,11 @@ static bool trans_ertn(CPULoongArchState *env, arg_ertn *restrict a) {
 static bool trans_idle(CPULoongArchState *env, arg_idle *restrict a) {
     CHECK_PLV(0);
 #ifndef CONFIG_DIFF
+    if (loongarch_smp_cpu_count() > 1 && !loongarch_cpu_has_irq(env)) {
+        env_cpu(env)->halted = 1;
+        env->pc += 4;
+        return true;
+    }
     if (!determined) {
         while (loongarch_cpu_check_irq(env), !loongarch_cpu_has_irq(env)) {
             sleep(1);

@@ -31,6 +31,7 @@
 #include "diffnet.h"
 #endif
 #include "insn_stats.h"
+#include "smp.h"
 
 #if defined(CONFIG_PLUGIN)
 la_emu_plugin_ops* plugin_ops;
@@ -95,11 +96,11 @@ static void sigaction_entry_int(int signal, siginfo_t *si, void *arg) {
 
 #if !defined (CONFIG_USER_ONLY) && !defined (CONFIG_DIFF)
 static void sigaction_entry_timer(int signal, siginfo_t *si, void *arg) {
-    if (!current_env) return;
     timer_t id = *((timer_t*)si->si_value.sival_ptr);
-    if (id==current_env->timerid) {
-        qemu_log_mask(CPU_LOG_TIMER, "TIMER alarmed, icount:%ld\n", current_env->icount);
-        current_env->timer_int = true;
+    CPULoongArchState *env = loongarch_smp_find_env_by_timerid(id);
+    if (env) {
+        qemu_log_mask(CPU_LOG_TIMER, "TIMER alarmed, icount:%ld\n", env->icount);
+        env->timer_int = true;
     } else {
         fprintf(stderr, "TIMER, it's somebody else!\n");
     }
@@ -182,8 +183,11 @@ const char *loongarch_exception_name(int32_t exception)
 char* ram;
 #endif
 uint64_t ram_size = SZ_4G;
-static uint64_t ram_map_size = SZ_4G;
+static uint64_t ram_map_size __attribute__((unused)) = SZ_4G;
 char* kernel_filename;
+#ifndef CONFIG_DIFF
+static int smp_cpus = 1;
+#endif
 
 void usage(void) {
 #ifndef CONFIG_USER_ONLY
@@ -198,6 +202,7 @@ void usage(void) {
     fprintf(stderr, "-c Check item, support: tlb_mhit\n");
     fprintf(stderr, "-z Determined events\n");
     fprintf(stderr, "-g Enable gdbserver\n");
+    fprintf(stderr, "--smp n       Number of virtual CPUs\n");
     fprintf(stderr, "-w Force enable hardware page table walker\n");
     fprintf(stderr, "-N host:port  Enable network difftest against QEMU GDB stub\n");
     fprintf(stderr, "-R file       Instruction stats report (default: report_instruction.md)\n");
@@ -752,6 +757,9 @@ void loongarch_cpu_set_irq(void *opaque, int irq, int level)
     }
 
     env->CSR_ESTAT = deposit64(env->CSR_ESTAT, irq, 1, level != 0);
+    if (level) {
+        env_cpu(env)->halted = 0;
+    }
 }
 
 /* Fetch instruction at env->pc, using TLB cache to accelerate address translation. */
@@ -805,8 +813,8 @@ int check_dump_enable = 0;
 uint64_t dbg_prev_pc = 0;
 
 /* Trace PC logging */
-static bool trace_enabled;
-static char trace_log_name[PATH_MAX];
+static bool trace_enabled __attribute__((unused));
+static char trace_log_name[PATH_MAX] __attribute__((unused));
 static FILE *trace_file;
 
 /* Debug watch variables -- set via gdb. */
@@ -824,6 +832,7 @@ int exec_env(CPULoongArchState *env) {
     INSCache* ic;
     current_env = env;
     CPUState* cs = env_cpu(env);
+    current_cpu = cs;
     while (1) {
         if (sigsetjmp(env_cpu(env)->jmp_env, 0) == 0) {
             uint32_t insn;
@@ -950,6 +959,9 @@ int exec_env(CPULoongArchState *env) {
 #endif
                 env->icount ++;
                 PERF_INC(COUNTER_INST);
+                if (loongarch_smp_should_yield(env)) {
+                    return 3;
+                }
 
                 /* Standalone step limit (no diffnet needed) */
                 {
@@ -1249,36 +1261,6 @@ bool loongarch_cpu_has_irq(CPULoongArchState *env) {
 
 #ifndef CONFIG_DIFF
 
-CPUState *first_cpu;
-CPUState *current_cpu;
-
-void cpu_register(CPUState *cpu)
-{
-    CPUState *tail;
-    int max_index = -1;
-
-    cpu->next_cpu = NULL;
-    if (!first_cpu) {
-        cpu->cpu_index = 0;
-        first_cpu = cpu;
-        return;
-    }
-
-    tail = first_cpu;
-    while (tail->next_cpu) {
-        if (tail->cpu_index > max_index) {
-            max_index = tail->cpu_index;
-        }
-        tail = tail->next_cpu;
-    }
-    if (tail->cpu_index > max_index) {
-        max_index = tail->cpu_index;
-    }
-
-    cpu->cpu_index = max_index + 1;
-    tail->next_cpu = cpu;
-}
-
 int main(int argc, char** argv, char **envp) {
     logfile = stderr;
 
@@ -1290,6 +1272,13 @@ int main(int argc, char** argv, char **envp) {
         } else if (strcmp(argv[i], "--trance_log_name") == 0 && i + 1 < argc) {
             strncpy(trace_log_name, argv[i + 1], PATH_MAX - 1);
             trace_log_name[PATH_MAX - 1] = '\0';
+            argv[i] = NULL;
+            argv[++i] = NULL;
+        } else if (strcmp(argv[i], "--smp") == 0 && i + 1 < argc) {
+            smp_cpus = atoi(argv[i + 1]);
+            if (smp_cpus < 1) {
+                smp_cpus = 1;
+            }
             argv[i] = NULL;
             argv[++i] = NULL;
         }
@@ -1470,33 +1459,64 @@ int main(int argc, char** argv, char **envp) {
 #endif
     qemu_log_mask(CPU_LOG_PAGE, "entry_addr:%lx\n", entry_addr);
 
-    LoongArchCPU* cpu = aligned_alloc(64, sizeof(LoongArchCPU));
-    memset(cpu, 0, sizeof(LoongArchCPU));
-    CPUState *cs = CPU(cpu);
-    cs->cluster_index = -1;
-    cpu_register(cs);
-    current_cpu = cs;
-    CPULoongArchState* env = &cpu->env;
-    cs->env = env;
-    cpu_reset(cs);
-    if (arch_name) {
-        if (strcmp(arch_name, "loongarch32r") == 0) loongarch_la32r_initfn(env);
-        else if (strcmp(arch_name, "loongarch32s") == 0) loongarch_la32s_initfn(env);
-        else if (strcmp(arch_name, "la464") == 0 ||
-                 strcmp(arch_name, "loongarch64") == 0) loongarch_la464_initfn(env);
-        else if (strcmp(arch_name, "openc910") == 0) loongarch_openc910_initfn(env);
-        else {
-            fprintf(stderr, "Unknown arch: %s\n", arch_name);
-            loongarch_core_initfn(env);
-        }
-    } else {
-        loongarch_core_initfn(env);
-    }
-    cpu_clear_tc(env);
-    env->timer_counter = INT64_MAX;
+    CPULoongArchState *env = NULL;
+    int create_cpus = 1;
+#ifndef CONFIG_USER_ONLY
+    create_cpus = smp_cpus;
+#endif
 
-#ifndef CONFIG_USER_ONLY    
-    env->timerid = timerid;
+    for (int cpu_i = 0; cpu_i < create_cpus; cpu_i++) {
+        LoongArchCPU* cpu = aligned_alloc(64, sizeof(LoongArchCPU));
+        memset(cpu, 0, sizeof(LoongArchCPU));
+        CPUState *cs = CPU(cpu);
+        cs->cluster_index = -1;
+        cpu_register(cs);
+
+        CPULoongArchState* cpu_env = &cpu->env;
+        cs->env = cpu_env;
+        cpu_reset(cs);
+        if (arch_name) {
+            if (strcmp(arch_name, "loongarch32r") == 0) loongarch_la32r_initfn(cpu_env);
+            else if (strcmp(arch_name, "loongarch32s") == 0) loongarch_la32s_initfn(cpu_env);
+            else if (strcmp(arch_name, "la464") == 0 ||
+                     strcmp(arch_name, "loongarch64") == 0) loongarch_la464_initfn(cpu_env);
+            else if (strcmp(arch_name, "openc910") == 0) loongarch_openc910_initfn(cpu_env);
+            else {
+                fprintf(stderr, "Unknown arch: %s\n", arch_name);
+                loongarch_core_initfn(cpu_env);
+            }
+        } else {
+            loongarch_core_initfn(cpu_env);
+        }
+        cpu_clear_tc(cpu_env);
+        cpu_env->timer_counter = INT64_MAX;
+
+#ifndef CONFIG_USER_ONLY
+        if (cpu_i == 0) {
+            cpu_env->timerid = timerid;
+        } else {
+            struct sigevent cpu_sev;
+            memset(&cpu_sev, 0, sizeof(cpu_sev));
+            cpu_sev.sigev_notify = SIGEV_SIGNAL;
+            cpu_sev.sigev_signo = SIGRTMIN;
+            cpu_sev.sigev_value.sival_ptr = &cpu_env->timerid;
+            lsassert(timer_create(CLOCK_MONOTONIC, &cpu_sev,
+                                  &cpu_env->timerid) == 0);
+        }
+#endif
+
+        if (cpu_i == 0) {
+            current_cpu = cs;
+            env = cpu_env;
+        } else {
+            cs->halted = 1;
+            cpu_env->pc = 0;
+        }
+    }
+    current_env = env;
+    loongarch_smp_init_iocsr();
+
+#ifndef CONFIG_USER_ONLY
     
     {
         qemu_irq irq = qemu_allocate_irq(loongarch_cpu_set_irq, (void*)env, 3);
@@ -1669,7 +1689,14 @@ int main(int argc, char** argv, char **envp) {
             diffnet_enabled = true;
         }
 #endif
-        exec_env(env);
+#ifndef CONFIG_USER_ONLY
+        if (loongarch_smp_cpu_count() > 1) {
+            loongarch_smp_run();
+        } else
+#endif
+        {
+            exec_env(env);
+        }
     }
     if (trace_file) {
         fclose(trace_file);

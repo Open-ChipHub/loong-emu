@@ -1,193 +1,19 @@
 # Emu Instruction Execution Report
 
-**Total instructions executed**: 2147483647  
-**Distinct executed**: 148 / 1690 static ISA  
-
-## Exceptions & Interrupts
-
-| Type | Count |
-|------|-------|
-| IRQ (interrupts raised) | 2111 |
-| TLB refill events | 0 |
-| Syscall count | 200 |
-| Exception entries (ecount) | 460 |
-
-### Exception Detail
-
-| # | Exception | Count |
-|---|-----------|-------|
-| 1 | PIL (Page invalid - load) | 44 |
-| 2 | PIS (Page invalid - store) | 60 |
-| 3 | PIF (Page invalid - fetch) | 113 |
-| 4 | PME (Page modified) | 43 |
-| 11 | SYS (Syscall) | 200 |
+**Total instructions executed**: 0  
+**Distinct executed**: 0 / 1690 static ISA  
 
 ## By Category
 
 | Category | Count | % |
 |----------|-------|----|
-| Arithmetic/Shift (Ch3.1) | 1143429122 | 53.25% |
-| Branch/Jump (Ch3.3) | 532637039 | 24.80% |
-| Load/Store (Ch3.4) | 469500104 | 21.86% |
-| Atomic (Ch3.5) | 546566 | 0.03% |
-| Barrier (Ch3.6) | 975651 | 0.05% |
-| Float (Ch4) | 22 | 0.00% |
-| Privileged (Ch6) | 395143 | 0.02% |
 
 ## Executed Instructions
 
 | # | Instruction | Category | Count | % |
 |---|------------|----------|-------|----|
-| 1 | `add_d` | Arithmetic/Shift (Ch3.1) | **80402536** | **3.74%** |
-| 2 | `add_w` | Arithmetic/Shift (Ch3.1) | **61131436** | **2.85%** |
-| 3 | `addi_d` | Arithmetic/Shift (Ch3.1) | **137499305** | **6.40%** |
-| 4 | `addi_w` | Arithmetic/Shift (Ch3.1) | **163579124** | **7.62%** |
-| 5 | `addu16i_d` | Arithmetic/Shift (Ch3.1) | **11745** | **0.00%** |
-| 6 | `alsl_d` | Arithmetic/Shift (Ch3.1) | **50142606** | **2.33%** |
-| 7 | `alsl_w` | Arithmetic/Shift (Ch3.1) | **28440** | **0.00%** |
-| 8 | `and` | Arithmetic/Shift (Ch3.1) | **37180134** | **1.73%** |
-| 9 | `andi` | Arithmetic/Shift (Ch3.1) | **67823897** | **3.16%** |
-| 10 | `andn` | Arithmetic/Shift (Ch3.1) | **14297688** | **0.67%** |
-| 11 | `clz_d` | Arithmetic/Shift (Ch3.1) | **211** | **0.00%** |
-| 12 | `clz_w` | Arithmetic/Shift (Ch3.1) | **3203** | **0.00%** |
-| 13 | `ctz_d` | Arithmetic/Shift (Ch3.1) | **25778** | **0.00%** |
-| 14 | `ctz_w` | Arithmetic/Shift (Ch3.1) | **11937** | **0.00%** |
-| 15 | `div_d` | Arithmetic/Shift (Ch3.1) | **4978** | **0.00%** |
-| 16 | `div_du` | Arithmetic/Shift (Ch3.1) | **11931** | **0.00%** |
-| 17 | `div_w` | Arithmetic/Shift (Ch3.1) | **32** | **0.00%** |
-| 18 | `div_wu` | Arithmetic/Shift (Ch3.1) | **58759** | **0.00%** |
-| 19 | `ext_w_b` | Arithmetic/Shift (Ch3.1) | **630473** | **0.03%** |
-| 20 | `ext_w_h` | Arithmetic/Shift (Ch3.1) | **5335489** | **0.25%** |
-| 21 | `ldptr_d` | Arithmetic/Shift (Ch3.1) | **44359386** | **2.07%** |
-| 22 | `ldptr_w` | Arithmetic/Shift (Ch3.1) | **18218915** | **0.85%** |
-| 23 | `lu12i_w` | Arithmetic/Shift (Ch3.1) | **4295282** | **0.20%** |
-| 24 | `lu32i_d` | Arithmetic/Shift (Ch3.1) | **1006558** | **0.05%** |
-| 25 | `lu52i_d` | Arithmetic/Shift (Ch3.1) | **543883** | **0.03%** |
-| 26 | `maskeqz` | Arithmetic/Shift (Ch3.1) | **2287027** | **0.11%** |
-| 27 | `masknez` | Arithmetic/Shift (Ch3.1) | **2439920** | **0.11%** |
-| 28 | `mod_du` | Arithmetic/Shift (Ch3.1) | **350** | **0.00%** |
-| 29 | `mod_w` | Arithmetic/Shift (Ch3.1) | **575** | **0.00%** |
-| 30 | `mod_wu` | Arithmetic/Shift (Ch3.1) | **265431** | **0.01%** |
-| 31 | `movgr2fr_d` | Arithmetic/Shift (Ch3.1) | **3** | **0.00%** |
-| 32 | `mul_d` | Arithmetic/Shift (Ch3.1) | **5746985** | **0.27%** |
-| 33 | `mul_w` | Arithmetic/Shift (Ch3.1) | **22043518** | **1.03%** |
-| 34 | `mulh_du` | Arithmetic/Shift (Ch3.1) | **5117267** | **0.24%** |
-| 35 | `mulh_wu` | Arithmetic/Shift (Ch3.1) | **908** | **0.00%** |
-| 36 | `mulw_d_w` | Arithmetic/Shift (Ch3.1) | **1** | **0.00%** |
-| 37 | `mulw_d_wu` | Arithmetic/Shift (Ch3.1) | **5628** | **0.00%** |
-| 38 | `nor` | Arithmetic/Shift (Ch3.1) | **173125** | **0.01%** |
-| 39 | `or` | Arithmetic/Shift (Ch3.1) | **107126414** | **4.99%** |
-| 40 | `ori` | Arithmetic/Shift (Ch3.1) | **2808252** | **0.13%** |
-| 41 | `orn` | Arithmetic/Shift (Ch3.1) | **2415** | **0.00%** |
-| 42 | `pcaddi` | Arithmetic/Shift (Ch3.1) | **66339** | **0.00%** |
-| 43 | `pcaddu12i` | Arithmetic/Shift (Ch3.1) | **13489** | **0.00%** |
-| 44 | `pcalau12i` | Arithmetic/Shift (Ch3.1) | **3119446** | **0.15%** |
-| 45 | `rdtime_d` | Arithmetic/Shift (Ch3.1) | **526116** | **0.02%** |
-| 46 | `revb_2h` | Arithmetic/Shift (Ch3.1) | **70209** | **0.00%** |
-| 47 | `revb_4h` | Arithmetic/Shift (Ch3.1) | **68839** | **0.00%** |
-| 48 | `revb_d` | Arithmetic/Shift (Ch3.1) | **2** | **0.00%** |
-| 49 | `revh_d` | Arithmetic/Shift (Ch3.1) | **68839** | **0.00%** |
-| 50 | `rotri_d` | Arithmetic/Shift (Ch3.1) | **9410900** | **0.44%** |
-| 51 | `rotri_w` | Arithmetic/Shift (Ch3.1) | **8222514** | **0.38%** |
-| 52 | `sll_d` | Arithmetic/Shift (Ch3.1) | **21991854** | **1.02%** |
-| 53 | `sll_w` | Arithmetic/Shift (Ch3.1) | **15243278** | **0.71%** |
-| 54 | `slli_d` | Arithmetic/Shift (Ch3.1) | **27956818** | **1.30%** |
-| 55 | `slli_w` | Arithmetic/Shift (Ch3.1) | **39561035** | **1.84%** |
-| 56 | `slt` | Arithmetic/Shift (Ch3.1) | **3201306** | **0.15%** |
-| 57 | `slti` | Arithmetic/Shift (Ch3.1) | **76947** | **0.00%** |
-| 58 | `sltu` | Arithmetic/Shift (Ch3.1) | **5765077** | **0.27%** |
-| 59 | `sltui` | Arithmetic/Shift (Ch3.1) | **877383** | **0.04%** |
-| 60 | `sra_d` | Arithmetic/Shift (Ch3.1) | **852** | **0.00%** |
-| 61 | `sra_w` | Arithmetic/Shift (Ch3.1) | **18855** | **0.00%** |
-| 62 | `srai_d` | Arithmetic/Shift (Ch3.1) | **409060** | **0.02%** |
-| 63 | `srai_w` | Arithmetic/Shift (Ch3.1) | **101448** | **0.00%** |
-| 64 | `srl_d` | Arithmetic/Shift (Ch3.1) | **28762367** | **1.34%** |
-| 65 | `srl_w` | Arithmetic/Shift (Ch3.1) | **306107** | **0.01%** |
-| 66 | `srli_d` | Arithmetic/Shift (Ch3.1) | **15793472** | **0.74%** |
-| 67 | `srli_w` | Arithmetic/Shift (Ch3.1) | **12432892** | **0.58%** |
-| 68 | `sub_d` | Arithmetic/Shift (Ch3.1) | **8708902** | **0.41%** |
-| 69 | `sub_w` | Arithmetic/Shift (Ch3.1) | **50450179** | **2.35%** |
-| 70 | `xor` | Arithmetic/Shift (Ch3.1) | **55399550** | **2.58%** |
-| 71 | `xori` | Arithmetic/Shift (Ch3.1) | **183502** | **0.01%** |
-| 72 | `b` | Branch/Jump (Ch3.3) | **29823433** | **1.39%** |
-| 73 | `bcnez` | Branch/Jump (Ch3.3) | **3** | **0.00%** |
-| 74 | `beq` | Branch/Jump (Ch3.3) | **34874357** | **1.62%** |
-| 75 | `beqz` | Branch/Jump (Ch3.3) | **63097478** | **2.94%** |
-| 76 | `bge` | Branch/Jump (Ch3.3) | **5619044** | **0.26%** |
-| 77 | `bgeu` | Branch/Jump (Ch3.3) | **46228695** | **2.15%** |
-| 78 | `bl` | Branch/Jump (Ch3.3) | **8549521** | **0.40%** |
-| 79 | `blt` | Branch/Jump (Ch3.3) | **5547874** | **0.26%** |
-| 80 | `bltu` | Branch/Jump (Ch3.3) | **48019762** | **2.24%** |
-| 81 | `bne` | Branch/Jump (Ch3.3) | **30077936** | **1.40%** |
-| 82 | `bnez` | Branch/Jump (Ch3.3) | **81078683** | **3.78%** |
-| 83 | `bstrins_d` | Branch/Jump (Ch3.3) | **979525** | **0.05%** |
-| 84 | `bstrins_w` | Branch/Jump (Ch3.3) | **44001377** | **2.05%** |
-| 85 | `bstrpick_d` | Branch/Jump (Ch3.3) | **85523102** | **3.98%** |
-| 86 | `bstrpick_w` | Branch/Jump (Ch3.3) | **38560986** | **1.80%** |
-| 87 | `bytepick_d` | Branch/Jump (Ch3.3) | **10838** | **0.00%** |
-| 88 | `jirl` | Branch/Jump (Ch3.3) | **10644425** | **0.50%** |
-| 89 | `ld_b` | Load/Store (Ch3.4) | **780387** | **0.04%** |
-| 90 | `ld_bu` | Load/Store (Ch3.4) | **81342692** | **3.79%** |
-| 91 | `ld_d` | Load/Store (Ch3.4) | **88158213** | **4.11%** |
-| 92 | `ld_h` | Load/Store (Ch3.4) | **10450770** | **0.49%** |
-| 93 | `ld_hu` | Load/Store (Ch3.4) | **23182139** | **1.08%** |
-| 94 | `ld_w` | Load/Store (Ch3.4) | **767865** | **0.04%** |
-| 95 | `ld_wu` | Load/Store (Ch3.4) | **291791** | **0.01%** |
-| 96 | `ldx_b` | Load/Store (Ch3.4) | **226330** | **0.01%** |
-| 97 | `ldx_bu` | Load/Store (Ch3.4) | **61304694** | **2.85%** |
-| 98 | `ldx_d` | Load/Store (Ch3.4) | **2178720** | **0.10%** |
-| 99 | `ldx_h` | Load/Store (Ch3.4) | **28839081** | **1.34%** |
-| 100 | `ldx_hu` | Load/Store (Ch3.4) | **2147374** | **0.10%** |
-| 101 | `ldx_w` | Load/Store (Ch3.4) | **3490366** | **0.16%** |
-| 102 | `ldx_wu` | Load/Store (Ch3.4) | **6181** | **0.00%** |
-| 103 | `ll_d` | Load/Store (Ch3.4) | **111061** | **0.01%** |
-| 104 | `ll_w` | Load/Store (Ch3.4) | **178751** | **0.01%** |
-| 105 | `preld` | Load/Store (Ch3.4) | **34640** | **0.00%** |
-| 106 | `sc_d` | Load/Store (Ch3.4) | **106758** | **0.00%** |
-| 107 | `sc_w` | Load/Store (Ch3.4) | **178750** | **0.01%** |
-| 108 | `st_b` | Load/Store (Ch3.4) | **26224910** | **1.22%** |
-| 109 | `st_d` | Load/Store (Ch3.4) | **69811824** | **3.25%** |
-| 110 | `st_h` | Load/Store (Ch3.4) | **3596469** | **0.17%** |
-| 111 | `st_w` | Load/Store (Ch3.4) | **8965887** | **0.42%** |
-| 112 | `stptr_d` | Load/Store (Ch3.4) | **26280382** | **1.22%** |
-| 113 | `stptr_w` | Load/Store (Ch3.4) | **5313828** | **0.25%** |
-| 114 | `stx_b` | Load/Store (Ch3.4) | **1457967** | **0.07%** |
-| 115 | `stx_d` | Load/Store (Ch3.4) | **966261** | **0.04%** |
-| 116 | `stx_h` | Load/Store (Ch3.4) | **20765140** | **0.97%** |
-| 117 | `stx_w` | Load/Store (Ch3.4) | **2340873** | **0.11%** |
-| 118 | `amadd_d` | Atomic (Ch3.5) | **65654** | **0.00%** |
-| 119 | `amadd_db_d` | Atomic (Ch3.5) | **74105** | **0.00%** |
-| 120 | `amadd_db_w` | Atomic (Ch3.5) | **77109** | **0.00%** |
-| 121 | `amadd_w` | Atomic (Ch3.5) | **172130** | **0.01%** |
-| 122 | `amand_d` | Atomic (Ch3.5) | **12071** | **0.00%** |
-| 123 | `amand_db_d` | Atomic (Ch3.5) | **23258** | **0.00%** |
-| 124 | `amor_d` | Atomic (Ch3.5) | **52563** | **0.00%** |
-| 125 | `amor_db_d` | Atomic (Ch3.5) | **43570** | **0.00%** |
-| 126 | `amor_db_w` | Atomic (Ch3.5) | **3** | **0.00%** |
-| 127 | `amor_w` | Atomic (Ch3.5) | **20** | **0.00%** |
-| 128 | `amswap_db_d` | Atomic (Ch3.5) | **4621** | **0.00%** |
-| 129 | `amswap_db_w` | Atomic (Ch3.5) | **1629** | **0.00%** |
-| 130 | `amswap_w` | Atomic (Ch3.5) | **1** | **0.00%** |
-| 131 | `amxor_db_d` | Atomic (Ch3.5) | **19832** | **0.00%** |
-| 132 | `dbar` | Barrier (Ch3.6) | **975530** | **0.05%** |
-| 133 | `ibar` | Barrier (Ch3.6) | **121** | **0.00%** |
-| 134 | `fcmp_cond_d` | Float (Ch4) | **3** | **0.00%** |
-| 135 | `fdiv_d` | Float (Ch4) | **3** | **0.00%** |
-| 136 | `ffint_d_l` | Float (Ch4) | **3** | **0.00%** |
-| 137 | `fld_d` | Float (Ch4) | **4** | **0.00%** |
-| 138 | `fst_d` | Float (Ch4) | **9** | **0.00%** |
-| 139 | `cpucfg` | Privileged (Ch6) | **16** | **0.00%** |
-| 140 | `csrrd` | Privileged (Ch6) | **38164** | **0.00%** |
-| 141 | `csrwr` | Privileged (Ch6) | **16740** | **0.00%** |
-| 142 | `csrxchg` | Privileged (Ch6) | **337549** | **0.02%** |
-| 143 | `ertn` | Privileged (Ch6) | **2572** | **0.00%** |
-| 144 | `invtlb` | Privileged (Ch6) | **96** | **0.00%** |
-| 145 | `iocsrrd_d` | Privileged (Ch6) | **2** | **0.00%** |
-| 146 | `iocsrrd_w` | Privileged (Ch6) | **1** | **0.00%** |
-| 147 | `iocsrwr_d` | Privileged (Ch6) | **2** | **0.00%** |
-| 148 | `iocsrwr_w` | Privileged (Ch6) | **1** | **0.00%** |
 
-*148 distinct instructions executed.*
+*0 distinct instructions executed.*
 
 ## Complete ISA Reference
 
@@ -198,17 +24,17 @@
 
 | # | Instruction | Count |
 |---|------------|-------|
-| 1 | `add_d` | **80402536** |
-| 2 | `add_w` | **61131436** |
-| 3 | `addi_d` | **137499305** |
-| 4 | `addi_w` | **163579124** |
-| 5 | `addu16i_d` | **11745** |
-| 6 | `alsl_d` | **50142606** |
-| 7 | `alsl_w` | **28440** |
+| 1 | `add_d` | 0 |
+| 2 | `add_w` | 0 |
+| 3 | `addi_d` | 0 |
+| 4 | `addi_w` | 0 |
+| 5 | `addu16i_d` | 0 |
+| 6 | `alsl_d` | 0 |
+| 7 | `alsl_w` | 0 |
 | 8 | `alsl_wu` | 0 |
-| 9 | `and` | **37180134** |
-| 10 | `andi` | **67823897** |
-| 11 | `andn` | **14297688** |
+| 9 | `and` | 0 |
+| 10 | `andi` | 0 |
+| 11 | `andn` | 0 |
 | 12 | `asrtgt_d` | 0 |
 | 13 | `asrtle_d` | 0 |
 | 14 | `bitrev_4b` | 0 |
@@ -216,16 +42,16 @@
 | 16 | `bitrev_d` | 0 |
 | 17 | `bitrev_w` | 0 |
 | 18 | `break` | 0 |
-| 19 | `bstrins_d` | **979525** |
-| 20 | `bstrins_w` | **44001377** |
-| 21 | `bstrpick_d` | **85523102** |
-| 22 | `bstrpick_w` | **38560986** |
-| 23 | `bytepick_d` | **10838** |
+| 19 | `bstrins_d` | 0 |
+| 20 | `bstrins_w` | 0 |
+| 21 | `bstrpick_d` | 0 |
+| 22 | `bstrpick_w` | 0 |
+| 23 | `bytepick_d` | 0 |
 | 24 | `bytepick_w` | 0 |
 | 25 | `clo_d` | 0 |
 | 26 | `clo_w` | 0 |
-| 27 | `clz_d` | **211** |
-| 28 | `clz_w` | **3203** |
+| 27 | `clz_d` | 0 |
+| 28 | `clz_w` | 0 |
 | 29 | `crc_w_b_w` | 0 |
 | 30 | `crc_w_d_w` | 0 |
 | 31 | `crc_w_h_w` | 0 |
@@ -236,26 +62,26 @@
 | 36 | `crcc_w_w_w` | 0 |
 | 37 | `cto_d` | 0 |
 | 38 | `cto_w` | 0 |
-| 39 | `ctz_d` | **25778** |
-| 40 | `ctz_w` | **11937** |
+| 39 | `ctz_d` | 0 |
+| 40 | `ctz_w` | 0 |
 | 41 | `dbcl` | 0 |
-| 42 | `div_d` | **4978** |
-| 43 | `div_du` | **11931** |
-| 44 | `div_w` | **32** |
-| 45 | `div_wu` | **58759** |
-| 46 | `ext_w_b` | **630473** |
-| 47 | `ext_w_h` | **5335489** |
-| 48 | `ldptr_d` | **44359386** |
-| 49 | `ldptr_w` | **18218915** |
-| 50 | `lu12i_w` | **4295282** |
-| 51 | `lu32i_d` | **1006558** |
-| 52 | `lu52i_d` | **543883** |
-| 53 | `maskeqz` | **2287027** |
-| 54 | `masknez` | **2439920** |
+| 42 | `div_d` | 0 |
+| 43 | `div_du` | 0 |
+| 44 | `div_w` | 0 |
+| 45 | `div_wu` | 0 |
+| 46 | `ext_w_b` | 0 |
+| 47 | `ext_w_h` | 0 |
+| 48 | `ldptr_d` | 0 |
+| 49 | `ldptr_w` | 0 |
+| 50 | `lu12i_w` | 0 |
+| 51 | `lu32i_d` | 0 |
+| 52 | `lu52i_d` | 0 |
+| 53 | `maskeqz` | 0 |
+| 54 | `masknez` | 0 |
 | 55 | `mod_d` | 0 |
-| 56 | `mod_du` | **350** |
-| 57 | `mod_w` | **575** |
-| 58 | `mod_wu` | **265431** |
+| 56 | `mod_du` | 0 |
+| 57 | `mod_w` | 0 |
+| 58 | `mod_wu` | 0 |
 | 59 | `movcf2fr` | 0 |
 | 60 | `movcf2gr` | 0 |
 | 61 | `movfcsr2gr` | 0 |
@@ -265,93 +91,93 @@
 | 65 | `movfrh2gr_s` | 0 |
 | 66 | `movgr2cf` | 0 |
 | 67 | `movgr2fcsr` | 0 |
-| 68 | `movgr2fr_d` | **3** |
+| 68 | `movgr2fr_d` | 0 |
 | 69 | `movgr2fr_w` | 0 |
 | 70 | `movgr2frh_w` | 0 |
-| 71 | `mul_d` | **5746985** |
-| 72 | `mul_w` | **22043518** |
+| 71 | `mul_d` | 0 |
+| 72 | `mul_w` | 0 |
 | 73 | `mulh_d` | 0 |
-| 74 | `mulh_du` | **5117267** |
+| 74 | `mulh_du` | 0 |
 | 75 | `mulh_w` | 0 |
-| 76 | `mulh_wu` | **908** |
-| 77 | `mulw_d_w` | **1** |
-| 78 | `mulw_d_wu` | **5628** |
-| 79 | `nor` | **173125** |
-| 80 | `or` | **107126414** |
-| 81 | `ori` | **2808252** |
-| 82 | `orn` | **2415** |
-| 83 | `pcaddi` | **66339** |
-| 84 | `pcaddu12i` | **13489** |
+| 76 | `mulh_wu` | 0 |
+| 77 | `mulw_d_w` | 0 |
+| 78 | `mulw_d_wu` | 0 |
+| 79 | `nor` | 0 |
+| 80 | `or` | 0 |
+| 81 | `ori` | 0 |
+| 82 | `orn` | 0 |
+| 83 | `pcaddi` | 0 |
+| 84 | `pcaddu12i` | 0 |
 | 85 | `pcaddu18i` | 0 |
-| 86 | `pcalau12i` | **3119446** |
-| 87 | `rdtime_d` | **526116** |
+| 86 | `pcalau12i` | 0 |
+| 87 | `rdtime_d` | 0 |
 | 88 | `rdtimeh_w` | 0 |
 | 89 | `rdtimel_w` | 0 |
-| 90 | `revb_2h` | **70209** |
+| 90 | `revb_2h` | 0 |
 | 91 | `revb_2w` | 0 |
-| 92 | `revb_4h` | **68839** |
-| 93 | `revb_d` | **2** |
+| 92 | `revb_4h` | 0 |
+| 93 | `revb_d` | 0 |
 | 94 | `revh_2w` | 0 |
-| 95 | `revh_d` | **68839** |
+| 95 | `revh_d` | 0 |
 | 96 | `rotr_d` | 0 |
 | 97 | `rotr_w` | 0 |
-| 98 | `rotri_d` | **9410900** |
-| 99 | `rotri_w` | **8222514** |
-| 100 | `sll_d` | **21991854** |
-| 101 | `sll_w` | **15243278** |
-| 102 | `slli_d` | **27956818** |
-| 103 | `slli_w` | **39561035** |
-| 104 | `slt` | **3201306** |
-| 105 | `slti` | **76947** |
-| 106 | `sltu` | **5765077** |
-| 107 | `sltui` | **877383** |
-| 108 | `sra_d` | **852** |
-| 109 | `sra_w` | **18855** |
-| 110 | `srai_d` | **409060** |
-| 111 | `srai_w` | **101448** |
-| 112 | `srl_d` | **28762367** |
-| 113 | `srl_w` | **306107** |
-| 114 | `srli_d` | **15793472** |
-| 115 | `srli_w` | **12432892** |
-| 116 | `sub_d` | **8708902** |
-| 117 | `sub_w` | **50450179** |
+| 98 | `rotri_d` | 0 |
+| 99 | `rotri_w` | 0 |
+| 100 | `sll_d` | 0 |
+| 101 | `sll_w` | 0 |
+| 102 | `slli_d` | 0 |
+| 103 | `slli_w` | 0 |
+| 104 | `slt` | 0 |
+| 105 | `slti` | 0 |
+| 106 | `sltu` | 0 |
+| 107 | `sltui` | 0 |
+| 108 | `sra_d` | 0 |
+| 109 | `sra_w` | 0 |
+| 110 | `srai_d` | 0 |
+| 111 | `srai_w` | 0 |
+| 112 | `srl_d` | 0 |
+| 113 | `srl_w` | 0 |
+| 114 | `srli_d` | 0 |
+| 115 | `srli_w` | 0 |
+| 116 | `sub_d` | 0 |
+| 117 | `sub_w` | 0 |
 | 118 | `syscall` | 0 |
-| 119 | `xor` | **55399550** |
-| 120 | `xori` | **183502** |
+| 119 | `xor` | 0 |
+| 120 | `xori` | 0 |
 
-*76/120 executed in this category.*
+*0/120 executed in this category.*
 
 ### Branch/Jump (Ch3.3)
 
 | # | Instruction | Count |
 |---|------------|-------|
-| 1 | `b` | **29823433** |
+| 1 | `b` | 0 |
 | 2 | `bceqz` | 0 |
-| 3 | `bcnez` | **3** |
-| 4 | `beq` | **34874357** |
-| 5 | `beqz` | **63097478** |
-| 6 | `bge` | **5619044** |
-| 7 | `bgeu` | **46228695** |
-| 8 | `bl` | **8549521** |
-| 9 | `blt` | **5547874** |
-| 10 | `bltu` | **48019762** |
-| 11 | `bne` | **30077936** |
-| 12 | `bnez` | **81078683** |
-| 13 | `jirl` | **10644425** |
+| 3 | `bcnez` | 0 |
+| 4 | `beq` | 0 |
+| 5 | `beqz` | 0 |
+| 6 | `bge` | 0 |
+| 7 | `bgeu` | 0 |
+| 8 | `bl` | 0 |
+| 9 | `blt` | 0 |
+| 10 | `bltu` | 0 |
+| 11 | `bne` | 0 |
+| 12 | `bnez` | 0 |
+| 13 | `jirl` | 0 |
 
-*12/13 executed in this category.*
+*0/13 executed in this category.*
 
 ### Load/Store (Ch3.4)
 
 | # | Instruction | Count |
 |---|------------|-------|
-| 1 | `ld_b` | **780387** |
-| 2 | `ld_bu` | **81342692** |
-| 3 | `ld_d` | **88158213** |
-| 4 | `ld_h` | **10450770** |
-| 5 | `ld_hu` | **23182139** |
-| 6 | `ld_w` | **767865** |
-| 7 | `ld_wu` | **291791** |
+| 1 | `ld_b` | 0 |
+| 2 | `ld_bu` | 0 |
+| 3 | `ld_d` | 0 |
+| 4 | `ld_h` | 0 |
+| 5 | `ld_hu` | 0 |
+| 6 | `ld_w` | 0 |
+| 7 | `ld_wu` | 0 |
 | 8 | `ldgt_b` | 0 |
 | 9 | `ldgt_d` | 0 |
 | 10 | `ldgt_h` | 0 |
@@ -360,23 +186,23 @@
 | 13 | `ldle_d` | 0 |
 | 14 | `ldle_h` | 0 |
 | 15 | `ldle_w` | 0 |
-| 16 | `ldx_b` | **226330** |
-| 17 | `ldx_bu` | **61304694** |
-| 18 | `ldx_d` | **2178720** |
-| 19 | `ldx_h` | **28839081** |
-| 20 | `ldx_hu` | **2147374** |
-| 21 | `ldx_w` | **3490366** |
-| 22 | `ldx_wu` | **6181** |
-| 23 | `ll_d` | **111061** |
-| 24 | `ll_w` | **178751** |
-| 25 | `preld` | **34640** |
+| 16 | `ldx_b` | 0 |
+| 17 | `ldx_bu` | 0 |
+| 18 | `ldx_d` | 0 |
+| 19 | `ldx_h` | 0 |
+| 20 | `ldx_hu` | 0 |
+| 21 | `ldx_w` | 0 |
+| 22 | `ldx_wu` | 0 |
+| 23 | `ll_d` | 0 |
+| 24 | `ll_w` | 0 |
+| 25 | `preld` | 0 |
 | 26 | `preldx` | 0 |
-| 27 | `sc_d` | **106758** |
-| 28 | `sc_w` | **178750** |
-| 29 | `st_b` | **26224910** |
-| 30 | `st_d` | **69811824** |
-| 31 | `st_h` | **3596469** |
-| 32 | `st_w` | **8965887** |
+| 27 | `sc_d` | 0 |
+| 28 | `sc_w` | 0 |
+| 29 | `st_b` | 0 |
+| 30 | `st_d` | 0 |
+| 31 | `st_h` | 0 |
+| 32 | `st_w` | 0 |
 | 33 | `stgt_b` | 0 |
 | 34 | `stgt_d` | 0 |
 | 35 | `stgt_h` | 0 |
@@ -385,25 +211,25 @@
 | 38 | `stle_d` | 0 |
 | 39 | `stle_h` | 0 |
 | 40 | `stle_w` | 0 |
-| 41 | `stptr_d` | **26280382** |
-| 42 | `stptr_w` | **5313828** |
-| 43 | `stx_b` | **1457967** |
-| 44 | `stx_d` | **966261** |
-| 45 | `stx_h` | **20765140** |
-| 46 | `stx_w` | **2340873** |
+| 41 | `stptr_d` | 0 |
+| 42 | `stptr_w` | 0 |
+| 43 | `stx_b` | 0 |
+| 44 | `stx_d` | 0 |
+| 45 | `stx_h` | 0 |
+| 46 | `stx_w` | 0 |
 
-*29/46 executed in this category.*
+*0/46 executed in this category.*
 
 ### Atomic (Ch3.5)
 
 | # | Instruction | Count |
 |---|------------|-------|
-| 1 | `amadd_d` | **65654** |
-| 2 | `amadd_db_d` | **74105** |
-| 3 | `amadd_db_w` | **77109** |
-| 4 | `amadd_w` | **172130** |
-| 5 | `amand_d` | **12071** |
-| 6 | `amand_db_d` | **23258** |
+| 1 | `amadd_d` | 0 |
+| 2 | `amadd_db_d` | 0 |
+| 3 | `amadd_db_w` | 0 |
+| 4 | `amadd_w` | 0 |
+| 5 | `amand_d` | 0 |
+| 6 | `amand_db_d` | 0 |
 | 7 | `amand_db_w` | 0 |
 | 8 | `amand_w` | 0 |
 | 9 | `ammax_d` | 0 |
@@ -422,29 +248,29 @@
 | 22 | `ammin_du` | 0 |
 | 23 | `ammin_w` | 0 |
 | 24 | `ammin_wu` | 0 |
-| 25 | `amor_d` | **52563** |
-| 26 | `amor_db_d` | **43570** |
-| 27 | `amor_db_w` | **3** |
-| 28 | `amor_w` | **20** |
+| 25 | `amor_d` | 0 |
+| 26 | `amor_db_d` | 0 |
+| 27 | `amor_db_w` | 0 |
+| 28 | `amor_w` | 0 |
 | 29 | `amswap_d` | 0 |
-| 30 | `amswap_db_d` | **4621** |
-| 31 | `amswap_db_w` | **1629** |
-| 32 | `amswap_w` | **1** |
+| 30 | `amswap_db_d` | 0 |
+| 31 | `amswap_db_w` | 0 |
+| 32 | `amswap_w` | 0 |
 | 33 | `amxor_d` | 0 |
-| 34 | `amxor_db_d` | **19832** |
+| 34 | `amxor_db_d` | 0 |
 | 35 | `amxor_db_w` | 0 |
 | 36 | `amxor_w` | 0 |
 
-*14/36 executed in this category.*
+*0/36 executed in this category.*
 
 ### Barrier (Ch3.6)
 
 | # | Instruction | Count |
 |---|------------|-------|
-| 1 | `dbar` | **975530** |
-| 2 | `ibar` | **121** |
+| 1 | `dbar` | 0 |
+| 2 | `ibar` | 0 |
 
-*2/2 executed in this category.*
+*0/2 executed in this category.*
 
 ### Float (Ch4)
 
@@ -456,19 +282,19 @@
 | 4 | `fadd_s` | 0 |
 | 5 | `fclass_d` | 0 |
 | 6 | `fclass_s` | 0 |
-| 7 | `fcmp_cond_d` | **3** |
+| 7 | `fcmp_cond_d` | 0 |
 | 8 | `fcmp_cond_s` | 0 |
 | 9 | `fcopysign_d` | 0 |
 | 10 | `fcopysign_s` | 0 |
 | 11 | `fcvt_d_s` | 0 |
 | 12 | `fcvt_s_d` | 0 |
-| 13 | `fdiv_d` | **3** |
+| 13 | `fdiv_d` | 0 |
 | 14 | `fdiv_s` | 0 |
-| 15 | `ffint_d_l` | **3** |
+| 15 | `ffint_d_l` | 0 |
 | 16 | `ffint_d_w` | 0 |
 | 17 | `ffint_s_l` | 0 |
 | 18 | `ffint_s_w` | 0 |
-| 19 | `fld_d` | **4** |
+| 19 | `fld_d` | 0 |
 | 20 | `fld_s` | 0 |
 | 21 | `fldgt_d` | 0 |
 | 22 | `fldgt_s` | 0 |
@@ -511,7 +337,7 @@
 | 59 | `fsel` | 0 |
 | 60 | `fsqrt_d` | 0 |
 | 61 | `fsqrt_s` | 0 |
-| 62 | `fst_d` | **9** |
+| 62 | `fst_d` | 0 |
 | 63 | `fst_s` | 0 |
 | 64 | `fstgt_d` | 0 |
 | 65 | `fstgt_s` | 0 |
@@ -542,7 +368,7 @@
 | 90 | `ftintrz_w_d` | 0 |
 | 91 | `ftintrz_w_s` | 0 |
 
-*5/91 executed in this category.*
+*0/91 executed in this category.*
 
 ### Vector LSX (Ch5)
 
@@ -1921,21 +1747,21 @@
 | # | Instruction | Count |
 |---|------------|-------|
 | 1 | `cacop` | 0 |
-| 2 | `cpucfg` | **16** |
-| 3 | `csrrd` | **38164** |
-| 4 | `csrwr` | **16740** |
-| 5 | `csrxchg` | **337549** |
-| 6 | `ertn` | **2572** |
+| 2 | `cpucfg` | 0 |
+| 3 | `csrrd` | 0 |
+| 4 | `csrwr` | 0 |
+| 5 | `csrxchg` | 0 |
+| 6 | `ertn` | 0 |
 | 7 | `idle` | 0 |
-| 8 | `invtlb` | **96** |
+| 8 | `invtlb` | 0 |
 | 9 | `iocsrrd_b` | 0 |
-| 10 | `iocsrrd_d` | **2** |
+| 10 | `iocsrrd_d` | 0 |
 | 11 | `iocsrrd_h` | 0 |
-| 12 | `iocsrrd_w` | **1** |
+| 12 | `iocsrrd_w` | 0 |
 | 13 | `iocsrwr_b` | 0 |
-| 14 | `iocsrwr_d` | **2** |
+| 14 | `iocsrwr_d` | 0 |
 | 15 | `iocsrwr_h` | 0 |
-| 16 | `iocsrwr_w` | **1** |
+| 16 | `iocsrwr_w` | 0 |
 | 17 | `lddir` | 0 |
 | 18 | `ldpte` | 0 |
 | 19 | `tlbclr` | 0 |
@@ -1945,5 +1771,5 @@
 | 23 | `tlbsrch` | 0 |
 | 24 | `tlbwr` | 0 |
 
-*10/24 executed in this category.*
+*0/24 executed in this category.*
 

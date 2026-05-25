@@ -1283,8 +1283,10 @@ int main(int argc, char** argv, char **envp) {
 #if defined(CONFIG_GDB)
                 gdb_verbose = true;
 #endif
+                break;
             case 'b':
                 load_bios = true;
+                break;
             case 'w':
                 hw_ptw = 1;
                 break;

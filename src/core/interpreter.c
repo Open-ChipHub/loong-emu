@@ -1345,7 +1345,7 @@ static bool trans_ammax_db_d(CPULoongArchState *env, arg_ammax_db_d *restrict a)
     hwaddr ha = store_pa(env, env->gpr[a->rj]);
     int64_t old_v = ram_ldd(ha);
     int64_t new_v = MAX((int64_t)env->gpr[a->rk], old_v);
-    ram_stw(ha, new_v);
+    ram_std(ha, new_v);
     env->gpr[a->rd] = (int64_t)old_v;
     env->pc += 4;
     return true;
@@ -1363,7 +1363,7 @@ static bool trans_ammin_db_d(CPULoongArchState *env, arg_ammin_db_d *restrict a)
     hwaddr ha = store_pa(env, env->gpr[a->rj]);
     int64_t old_v = ram_ldd(ha);
     int64_t new_v = MIN((int64_t)env->gpr[a->rk], old_v);
-    ram_stw(ha, new_v);
+    ram_std(ha, new_v);
     env->gpr[a->rd] = (int64_t)old_v;
     env->pc += 4;
     return true;
@@ -1381,7 +1381,7 @@ static bool trans_ammax_db_du(CPULoongArchState *env, arg_ammax_db_du *restrict 
     hwaddr ha = store_pa(env, env->gpr[a->rj]);
     int64_t old_v = ram_ldd(ha);
     int64_t new_v = MAX((uint64_t)env->gpr[a->rk], (uint64_t)old_v);
-    ram_stw(ha, new_v);
+    ram_std(ha, new_v);
     env->gpr[a->rd] = (int64_t)old_v;
     env->pc += 4;
     return true;
@@ -1399,7 +1399,7 @@ static bool trans_ammin_db_du(CPULoongArchState *env, arg_ammin_db_du *restrict 
     hwaddr ha = store_pa(env, env->gpr[a->rj]);
     int64_t old_v = ram_ldd(ha);
     int64_t new_v = MIN((uint64_t)env->gpr[a->rk], (uint64_t)old_v);
-    ram_stw(ha, new_v);
+    ram_std(ha, new_v);
     env->gpr[a->rd] = (int64_t)old_v;
     env->pc += 4;
     return true;

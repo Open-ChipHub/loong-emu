@@ -369,6 +369,7 @@ SerialState *simple_serial_init(unsigned long base, qemu_irq irq, int baudbase)
     s->baudbase = baudbase;
     simple_serial_realize_core(s);
     s->infd = 0;
+    fcntl(s->infd, F_SETFL, fcntl(s->infd, F_GETFL) | O_NONBLOCK);
     return s;
 }
 
@@ -393,6 +394,7 @@ SerialState *simple_serial_restore(int base, qemu_irq irq, int baudbase, const c
     fclose(f);
 
     s->infd = 0;
+    fcntl(s->infd, F_SETFL, fcntl(s->infd, F_GETFL) | O_NONBLOCK);
     return s;
 }
 
@@ -406,7 +408,7 @@ void serial_check_io(SerialState *s)
             fprintf(stderr, "serial: unexpected read error\n");
             abort();
         } else if (cnt == 0) {
-            abort();
+            return;
         } else if (cnt == 1) {
             serial_receive1(s, &c, 1);
             fifo_timeout_int(s);

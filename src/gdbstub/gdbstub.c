@@ -45,7 +45,6 @@ typedef struct GDBRegisterState {
 
 GDBState gdbserver_state;
 extern bool gdb_verbose;
-extern CPUState *current_cpu;
 
 int loongarch_cpu_gdb_read_register(CPUState *cs, GByteArray *mem_buf, int n);
 int loongarch_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n);
@@ -239,7 +238,16 @@ bool gdb_got_immediate_ack(void)
 
 unsigned int gdb_get_max_cpus(void)
 {
-    return 1;
+    CPUState *cpu;
+    unsigned int max_cpus = 0;
+
+    for (cpu = first_cpu; cpu; cpu = CPU_NEXT(cpu)) {
+        if ((unsigned int)cpu->cpu_index >= max_cpus) {
+            max_cpus = cpu->cpu_index + 1;
+        }
+    }
+
+    return max_cpus ? max_cpus : 1;
 }
 
 /*
@@ -484,23 +492,53 @@ void gdb_breakpoint_remove_all(CPUState *cs)
 
 static CPUState *find_cpu(uint32_t thread_id)
 {
-    return current_cpu;
+    CPUState *cpu;
+
+    for (cpu = first_cpu; cpu; cpu = CPU_NEXT(cpu)) {
+        if ((uint32_t)gdb_get_cpu_index(cpu) == thread_id) {
+            return cpu;
+        }
+    }
+
+    return NULL;
 }
 
 
 CPUState *gdb_get_first_cpu_in_process(GDBProcess *process)
 {
-    return current_cpu;
+    CPUState *cpu;
+
+    for (cpu = first_cpu; cpu; cpu = CPU_NEXT(cpu)) {
+        if (gdb_get_cpu_pid(cpu) == process->pid) {
+            return cpu;
+        }
+    }
+
+    return NULL;
 }
 
 static CPUState *gdb_next_cpu_in_process(CPUState *cpu)
 {
+    uint32_t pid = gdb_get_cpu_pid(cpu);
+
+    for (cpu = CPU_NEXT(cpu); cpu; cpu = CPU_NEXT(cpu)) {
+        if (gdb_get_cpu_pid(cpu) == pid) {
+            return cpu;
+        }
+    }
+
     return NULL;
 }
 
 /* Return the cpu following @cpu, while ignoring unattached processes. */
 static CPUState *gdb_next_attached_cpu(CPUState *cpu)
 {
+    for (cpu = CPU_NEXT(cpu); cpu; cpu = CPU_NEXT(cpu)) {
+        if (gdb_get_cpu_process(cpu)->attached) {
+            return cpu;
+        }
+    }
+
     return NULL;
 }
 
@@ -508,11 +546,16 @@ static CPUState *gdb_next_attached_cpu(CPUState *cpu)
 /* Return the first attached cpu */
 CPUState *gdb_first_attached_cpu(void)
 {
-    CPUState *cpu = current_cpu;
+    CPUState *cpu = first_cpu;
+
+    if (!cpu) {
+        return NULL;
+    }
+
     GDBProcess *process = gdb_get_cpu_process(cpu);
 
     if (!process->attached) {
-        process->attached = true;
+        return gdb_next_attached_cpu(cpu);
     }
 
     return cpu;
@@ -607,6 +650,55 @@ GArray *gdb_get_register_list(CPUState *cpu)
     }
 
     return results;
+}
+
+static const char *get_feature_xml(const char *p, GDBProcess *process)
+{
+    CPUState *cpu = gdb_get_first_cpu_in_process(process);
+    GDBRegisterState *r;
+    const char *term = strchr(p, ':');
+    size_t len;
+
+    if (!cpu || !term) {
+        return NULL;
+    }
+
+    len = term - p;
+
+    if (strlen("target.xml") == len && strncmp(p, "target.xml", len) == 0) {
+        if (!process->target_xml) {
+            g_autoptr(GPtrArray) xml = g_ptr_array_new_with_free_func(g_free);
+
+            g_ptr_array_add(xml,
+                            g_strdup("<?xml version=\"1.0\"?>"
+                                     "<!DOCTYPE target SYSTEM \"gdb-target.dtd\">"
+                                     "<target>"
+                                     "<architecture>loongarch:la64</architecture>"));
+
+            for (guint i = 0; i < ((GArray *)cpu->gdb_regs)->len; i++) {
+                r = &g_array_index((GArray *)cpu->gdb_regs, GDBRegisterState, i);
+                g_ptr_array_add(xml,
+                                g_markup_printf_escaped("<xi:include href=\"%s\"/>",
+                                                        r->feature->xmlname));
+            }
+
+            g_ptr_array_add(xml, g_strdup("</target>"));
+            g_ptr_array_add(xml, NULL);
+
+            process->target_xml = g_strjoinv(NULL, (void *)xml->pdata);
+        }
+        return process->target_xml;
+    }
+
+    for (guint i = 0; i < ((GArray *)cpu->gdb_regs)->len; i++) {
+        r = &g_array_index((GArray *)cpu->gdb_regs, GDBRegisterState, i);
+        if (strlen(r->feature->xmlname) == len &&
+            strncmp(p, r->feature->xmlname, len) == 0) {
+            return r->feature->xml;
+        }
+    }
+
+    return NULL;
 }
 
 int gdb_read_register(CPUState *cpu, GByteArray *buf, int reg)
@@ -1728,6 +1820,7 @@ static void handle_query_thread_extra(GArray *params, void *user_ctx)
     cpu = gdb_get_cpu(gdb_get_cmd_param(params, 0)->thread_id.pid,
                       gdb_get_cmd_param(params, 0)->thread_id.tid);
     if (!cpu) {
+        gdb_put_packet("E22");
         return;
     }
 
@@ -1812,7 +1905,45 @@ static void handle_query_supported(GArray *params, void *user_ctx)
 
 static void handle_query_xfer_features(GArray *params, void *user_ctx)
 {
-    gdb_put_packet("E00");
+    GDBProcess *process;
+    unsigned long addr, len, total_len;
+    const char *xml;
+
+    if (params->len < 3) {
+        gdb_put_packet("E22");
+        return;
+    }
+
+    process = gdb_get_cpu_process(gdbserver_state.g_cpu);
+    xml = get_feature_xml(gdb_get_cmd_param(params, 0)->data, process);
+    if (!xml) {
+        gdb_put_packet("E00");
+        return;
+    }
+
+    addr = gdb_get_cmd_param(params, 1)->val_ul;
+    len = gdb_get_cmd_param(params, 2)->val_ul;
+    total_len = strlen(xml);
+
+    if (addr > total_len) {
+        gdb_put_packet("E00");
+        return;
+    }
+
+    if (len > (MAX_PACKET_LENGTH - 5) / 2) {
+        len = (MAX_PACKET_LENGTH - 5) / 2;
+    }
+
+    if (len < total_len - addr) {
+        g_string_assign(gdbserver_state.str_buf, "m");
+        gdb_memtox(gdbserver_state.str_buf, xml + addr, len);
+    } else {
+        g_string_assign(gdbserver_state.str_buf, "l");
+        gdb_memtox(gdbserver_state.str_buf, xml + addr, total_len - addr);
+    }
+
+    gdb_put_packet_binary(gdbserver_state.str_buf->str,
+                          gdbserver_state.str_buf->len, true);
 }
 
 static void handle_query_qemu_supported(GArray *params, void *user_ctx)
@@ -2560,13 +2691,17 @@ void gdb_init_gdbserver_state(void)
     gdbserver_state.state = RS_IDLE;
 
     gdb_create_default_process(&gdbserver_state);
+    if (gdbserver_state.process_num > 0) {
+        gdbserver_state.processes[0].attached = true;
+    }
 
     gdbserver_state.c_cpu = gdb_first_attached_cpu();
     gdbserver_state.g_cpu = gdbserver_state.c_cpu;
 
     gdbserver_state.gdb_core_xml_file = "loongarch-base64.xml";
 
-    gdb_init_cpu(gdbserver_state.c_cpu);
+    for (CPUState *cpu = first_cpu; cpu; cpu = CPU_NEXT(cpu)) {
+        gdb_init_cpu(cpu);
+    }
 
 }
-

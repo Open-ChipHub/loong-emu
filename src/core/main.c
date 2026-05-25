@@ -1249,7 +1249,35 @@ bool loongarch_cpu_has_irq(CPULoongArchState *env) {
 
 #ifndef CONFIG_DIFF
 
+CPUState *first_cpu;
 CPUState *current_cpu;
+
+void cpu_register(CPUState *cpu)
+{
+    CPUState *tail;
+    int max_index = -1;
+
+    cpu->next_cpu = NULL;
+    if (!first_cpu) {
+        cpu->cpu_index = 0;
+        first_cpu = cpu;
+        return;
+    }
+
+    tail = first_cpu;
+    while (tail->next_cpu) {
+        if (tail->cpu_index > max_index) {
+            max_index = tail->cpu_index;
+        }
+        tail = tail->next_cpu;
+    }
+    if (tail->cpu_index > max_index) {
+        max_index = tail->cpu_index;
+    }
+
+    cpu->cpu_index = max_index + 1;
+    tail->next_cpu = cpu;
+}
 
 int main(int argc, char** argv, char **envp) {
     logfile = stderr;
@@ -1445,6 +1473,8 @@ int main(int argc, char** argv, char **envp) {
     LoongArchCPU* cpu = aligned_alloc(64, sizeof(LoongArchCPU));
     memset(cpu, 0, sizeof(LoongArchCPU));
     CPUState *cs = CPU(cpu);
+    cs->cluster_index = -1;
+    cpu_register(cs);
     current_cpu = cs;
     CPULoongArchState* env = &cpu->env;
     cs->env = env;

@@ -14,6 +14,8 @@
 #include "cpu.h"
 
 #include "gdbstub/gdbserver.h"
+#include "gdbstub/gdbstub.h"
+#include "gdbstub/internals.h"
 
 bool gdb_verbose;
 
@@ -160,10 +162,14 @@ int gdbserver_loop(void) {
         gdbserver_handle_message();
         
         if (cpu_can_run) {
+            CPUState *cpu = gdbserver_state.c_cpu ? gdbserver_state.c_cpu : current_cpu;
+            current_cpu = cpu;
+            current_env = cpu->env;
             int r = exec_env(current_env);
             if (gdb_verbose)
                 fprintf(stderr, "gdb_exec_env exit %d\n", r);
             if (r == 2) {
+                gdb_set_stop_cpu(cpu);
                 gdb_put_packet("S05");
                 cpu_can_run = false;
             }
@@ -197,4 +203,3 @@ void gdbserver_init(int port) {
         laemu_exit(1);
     }
 }
-

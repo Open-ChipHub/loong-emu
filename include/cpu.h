@@ -509,6 +509,7 @@ typedef CPULoongArchState CPUArchState;
 typedef struct CPUState {
     int dummy;
     int cpu_index;
+    struct CPUState *next_cpu;
     void* as;
     int exception_index;
     CPULoongArchState *env;
@@ -532,6 +533,13 @@ typedef LoongArchCPU ArchCPU;
 #define CPU(obj) ((CPUState *)(obj))
 
 #define LOONGARCH_CPU(obj) ((LoongArchCPU *)(obj))
+
+extern CPUState *first_cpu;
+extern CPUState *current_cpu;
+
+void cpu_register(CPUState *cpu);
+
+#define CPU_NEXT(cpu) ((cpu)->next_cpu)
 
 int cpu_exec(CPUState *cpu);
 

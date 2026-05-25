@@ -182,6 +182,7 @@ const char *loongarch_exception_name(int32_t exception)
 char* ram;
 #endif
 uint64_t ram_size = SZ_4G;
+static uint64_t ram_map_size = SZ_4G;
 char* kernel_filename;
 
 void usage(void) {
@@ -215,17 +216,41 @@ static target_ulong user_setup_stack() {
 #define elfhdr Elf64_Ehdr
 #define elf_phdr Elf64_Phdr
 #if !defined (CONFIG_USER_ONLY) && !defined (CONFIG_DIFF)
-/* Allocate emulated physical RAM as a single 4G block. */
+/* Map the guest physical address span used by the low and high RAM windows. */
 static char* alloc_ram(uint64_t ram_size) {
-    void* part1 = mmap(NULL, SZ_4G, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ram_map_size = MAX(SZ_4G, SZ_2G + ram_size);
+    void* part1 = mmap(NULL, ram_map_size, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    lsassertm(part1 != MAP_FAILED, " mmap ram_map_size=0x%" PRIx64 "\n",
+              ram_map_size);
     return part1;
 }
 
 bool addr_in_ram(hwaddr pa) {
+    if (pa >= ram_map_size) {
+        return false;
+    }
+
     return
         (pa < SZ_256M) ||
-        (pa >= SZ_2G + SZ_256M && pa < ram_size + SZ_2G) ||
+        (pa >= SZ_512M && pa < ram_size + SZ_512M) ||
         (pa >= 0x1c000000 && pa < 0x1c000000 + SZ_32M);
+}
+
+bool addr_range_in_ram(hwaddr pa, unsigned size) {
+    if (size == 0 || pa + size - 1 < pa) {
+        return false;
+    }
+
+    hwaddr end = pa + size - 1;
+    if (end >= ram_map_size) {
+        return false;
+    }
+
+    return
+        (end < SZ_256M) ||
+        (pa >= SZ_512M && end < ram_size + SZ_512M) ||
+        (pa >= 0x1c000000 && end < 0x1c000000 + SZ_32M);
 }
 
 /* Load a raw binary image at entry_addr into guest RAM. */
@@ -1140,6 +1165,10 @@ void do_io_st(hwaddr ha, uint64_t data, int size) {
         }
         break;
     default:
+        qemu_log_mask(LOG_UNIMP, "unknown IO store: pa=0x%" PRIx64
+                      " size=%d data=0x%" PRIx64 " pc=0x%" PRIx64 "\n",
+                      (uint64_t)ha, size, data,
+                      current_env ? current_env->pc : 0);
     }
 }
 uint64_t do_io_ld(hwaddr ha, int size) {
@@ -1171,6 +1200,10 @@ uint64_t do_io_ld(hwaddr ha, int size) {
         data = 0;
         break;
     default:
+        qemu_log_mask(LOG_UNIMP, "unknown IO load: pa=0x%" PRIx64
+                      " size=%d pc=0x%" PRIx64 "\n",
+                      (uint64_t)ha, size,
+                      current_env ? current_env->pc : 0);
         break;
     }
     return data;
@@ -1201,7 +1234,11 @@ void loongarch_cpu_check_irq(CPULoongArchState *env) {
     }
     if (unlikely(serial_timer_int)) {
         serial_timer_int = false;
-        serial_check_io(ss);
+        if (serial_plus) {
+            serial_check_io(ss);
+        } else {
+            serial_io_check();
+        }
     }
 }
 
@@ -1415,25 +1452,31 @@ int main(int argc, char** argv, char **envp) {
     if (arch_name) {
         if (strcmp(arch_name, "loongarch32r") == 0) loongarch_la32r_initfn(env);
         else if (strcmp(arch_name, "loongarch32s") == 0) loongarch_la32s_initfn(env);
-        else if (strcmp(arch_name, "la464") == 0) loongarch_la464_initfn(env);
+        else if (strcmp(arch_name, "la464") == 0 ||
+                 strcmp(arch_name, "loongarch64") == 0) loongarch_la464_initfn(env);
         else if (strcmp(arch_name, "openc910") == 0) loongarch_openc910_initfn(env);
-        else { fprintf(stderr, "Unknown arch: %s\n", arch_name); if (arch_name && strcmp(arch_name,"loongarch32r")==0) loongarch_la32r_initfn(env);
-    else if (arch_name && strcmp(arch_name,"loongarch32s")==0) loongarch_la32s_initfn(env);
-    else loongarch_core_initfn(env); }
-    } else { if (arch_name && strcmp(arch_name,"loongarch32r")==0) loongarch_la32r_initfn(env);
-    else if (arch_name && strcmp(arch_name,"loongarch32s")==0) loongarch_la32s_initfn(env);
-    else loongarch_core_initfn(env); }
+        else {
+            fprintf(stderr, "Unknown arch: %s\n", arch_name);
+            loongarch_core_initfn(env);
+        }
+    } else {
+        loongarch_core_initfn(env);
+    }
     cpu_clear_tc(env);
     env->timer_counter = INT64_MAX;
 
 #ifndef CONFIG_USER_ONLY    
     env->timerid = timerid;
     
-    if (serial_plus) {
+    {
         qemu_irq irq = qemu_allocate_irq(loongarch_cpu_set_irq, (void*)env, 3);
 
-        // ss = simple_serial_init(0x1FF10000, irq, 115200);
-        ss = simple_serial_init(0x1FE00000, irq, 115200);
+        if (serial_plus) {
+            // ss = simple_serial_init(0x1FF10000, irq, 115200);
+            ss = simple_serial_init(0x1FE00000, irq, 115200);
+        } else {
+            serial_ioport_init(irq);
+        }
 
         struct sigevent sev;
         sev.sigev_notify = SIGEV_SIGNAL;

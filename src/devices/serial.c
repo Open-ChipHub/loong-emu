@@ -6,6 +6,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include "serial.h"
 
 #define UART_LCR_DLAB   0x80
 #define UART_IER_MSI    0x08
@@ -64,14 +65,44 @@ typedef struct SerialState {
 static SerialState s;
 static char   input = 'x';
 static bool   input_valid;
+static qemu_irq serial_irq;
+
+static void serial_update_irq(void)
+{
+    if (serial_irq && (s.ier & UART_IER_RDI) && input_valid) {
+        s.iir = UART_IIR_RDI;
+        qemu_irq_raise(serial_irq);
+    } else {
+        if (!input_valid && (s.iir & UART_IIR_ID) == UART_IIR_RDI) {
+            s.iir = UART_IIR_NO_INT;
+        }
+        qemu_irq_lower(serial_irq);
+    }
+}
+
+void serial_ioport_init(qemu_irq irq)
+{
+    serial_irq = irq;
+    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+    s.lsr = UART_LSR_TEMT | UART_LSR_THRE;
+    s.iir = UART_IIR_NO_INT;
+    s.msr = UART_MSR_DCD | UART_MSR_DSR | UART_MSR_CTS;
+    qemu_irq_lower(serial_irq);
+}
 
 static void try_read(void)
 {
     if (!input_valid) {
-        fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
-        if (read(STDIN_FILENO, &input, 1) == 1)
+        if (read(STDIN_FILENO, &input, 1) == 1) {
             input_valid = true;
+        }
     }
+    serial_update_irq();
+}
+
+void serial_io_check(void)
+{
+    try_read();
 }
 
 uint64_t serial_ioport_read(void *opaque, long addr, unsigned size)
@@ -82,13 +113,13 @@ uint64_t serial_ioport_read(void *opaque, long addr, unsigned size)
     switch (addr) {
     case 0:
         if (s.lcr & UART_LCR_DLAB) return s.divider & 0xff;
-        { uint8_t c = input; input_valid = false; return c; }
+        { uint8_t c = input; input_valid = false; serial_update_irq(); return c; }
     case 1:
         return (s.lcr & UART_LCR_DLAB) ? (s.divider >> 8) & 0xff : s.ier;
     case 2:
         if (input_valid) s.iir = UART_IIR_RDI;
         else if ((s.iir & UART_IIR_ID) == UART_IIR_THRI) s.thr_ipending = 0;
-        return 0;
+        return s.iir;
     case 3:
     case 4:
     case 7:
@@ -122,8 +153,10 @@ void serial_ioport_write(void *opaque, long addr, uint64_t val, unsigned size)
     case 1:
         if (s.lcr & UART_LCR_DLAB)
             s.divider = (s.divider & 0xff) | ((val << 8) & 0xff00);
-        else
+        else {
             s.ier = val & 0x0f;
+            serial_update_irq();
+        }
         break;
     case 2:
         s.fcr = val & 0xC9;

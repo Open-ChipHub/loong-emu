@@ -176,6 +176,7 @@ static void ipi_update_irq(CPUState *cpu)
 {
     LoongArchIPICore *core = ipi_core_for_cpu(cpu);
     bool pending;
+    uint64_t entry;
 
     if (!core) {
         return;
@@ -188,6 +189,17 @@ static void ipi_update_irq(CPUState *cpu)
         if (!cpu->env->pc && ipi_mailbox0(core)) {
             cpu->env->pc = ipi_mailbox0(core);
         }
+    }
+
+    /*
+     * Direct kernel boot has no QEMU-style secondary firmware loop to enable
+     * IPI and poll mailbox0.  Treat an IPI sent to a parked secondary with a
+     * non-zero mailbox0 as that firmware wakeup.
+     */
+    entry = ipi_mailbox0(core);
+    if (!pending && cpu->halted && !cpu->env->pc && entry && core->status) {
+        cpu->halted = 0;
+        cpu->env->pc = entry;
     }
 }
 

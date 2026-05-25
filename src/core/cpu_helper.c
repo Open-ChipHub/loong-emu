@@ -192,7 +192,7 @@ static int loongarch_map_address(CPULoongArchState *env, hwaddr *physical,
                                  int *prot, target_ulong address,
                                  MMUAccessType access_type, int mmu_idx)
 {
-    int index, match, tlbret;
+    int index, match, tlbret = 0;
 
 again:
     match = loongarch_tlb_search(env, address, &index);

@@ -232,7 +232,7 @@ bool addr_in_ram(hwaddr pa) {
 bool load_binary(const char* filename, uint64_t entry_addr) {
     int ret = 0;
     int size = 0;
-    uint8_t *data_ptr;
+    uint8_t *data_ptr = NULL;
     int fd = open(filename, O_RDONLY);
     if (fd < 0) {
         perror(filename);

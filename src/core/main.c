@@ -243,7 +243,7 @@ bool addr_in_ram(hwaddr pa) {
     }
 
     return
-        (pa < SZ_256M) ||
+        (pa < SZ_512M) ||
         (pa >= SZ_512M && pa < ram_size + SZ_512M) ||
         (pa >= 0x1c000000 && pa < 0x1c000000 + SZ_32M);
 }
@@ -259,7 +259,7 @@ bool addr_range_in_ram(hwaddr pa, unsigned size) {
     }
 
     return
-        (end < SZ_256M) ||
+        (end < SZ_512M) ||
         (pa >= SZ_512M && end < ram_size + SZ_512M) ||
         (pa >= 0x1c000000 && end < 0x1c000000 + SZ_32M);
 }
@@ -285,7 +285,13 @@ bool load_binary(const char* filename, uint64_t entry_addr) {
         goto fail;
     }
 
-    memcpy(ram + (entry_addr & 0xffffffff), data_ptr, size);
+    hwaddr load_pa = entry_addr & 0xffffffff;
+    memcpy(ram + load_pa, data_ptr, size);
+
+    hwaddr la32_dmw_alias = load_pa & 0x1fffffff;
+    if (la32_dmw_alias != load_pa && addr_range_in_ram(la32_dmw_alias, size)) {
+        memcpy(ram + la32_dmw_alias, data_ptr, size);
+    }
 
     free((void*)data_ptr);
     data_ptr = 0;
@@ -933,7 +939,7 @@ int exec_env(CPULoongArchState *env) {
 
 
                 insn = fetch(env, &ic);
-#ifdef CONFIG_DIFF
+#if defined(CONFIG_DIFF) || defined(CONFIG_DIFF_NET)
                 env->insn = insn;
                 env->prev_pc = env->pc;
 #endif

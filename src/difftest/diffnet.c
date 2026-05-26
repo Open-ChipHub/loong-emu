@@ -77,13 +77,21 @@ static inline uint64_t reg_from_bin_sized(const uint8_t *bin, int bytes)
     return reg_from_bin(bin);
 }
 
+static inline bool reg_equal_sized(uint64_t emu_val, uint64_t qemu_val)
+{
+    if (g_reg_bytes == 4) {
+        return (uint32_t)emu_val == (uint32_t)qemu_val;
+    }
+    return emu_val == qemu_val;
+}
+
 static bool qemu_reg_matches(int regnum, uint64_t emu_val)
 {
     uint8_t single[8] = {0};
     if (qrsp_read_register(&g_qrsp, regnum, single, g_reg_bytes) != g_reg_bytes) {
         return false;
     }
-    return reg_from_bin_sized(single, g_reg_bytes) == emu_val;
+    return reg_equal_sized(emu_val, reg_from_bin_sized(single, g_reg_bytes));
 }
 
 /* ---- CSR trampoline: run pre-encoded dump blob on emu side ---- */
@@ -285,7 +293,7 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
     for (int i = 0; i < 32; i++) {
         uint64_t qemu_val = reg_from_bin_sized(g_bin + i * g_reg_bytes,
                                                g_reg_bytes);
-        if (env->gpr[i] != qemu_val) {
+        if (!reg_equal_sized(env->gpr[i], qemu_val)) {
             if (qemu_reg_matches(i, env->gpr[i])) {
                 continue;
             }
@@ -297,7 +305,7 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
     {
         uint64_t qemu_pc = reg_from_bin_sized(g_bin + 33 * g_reg_bytes,
                                               g_reg_bytes);
-        if (env->pc != qemu_pc) {
+        if (!reg_equal_sized(env->pc, qemu_pc)) {
             if (qemu_reg_matches(33, env->pc)) {
                 return mismatch;
             }

@@ -317,6 +317,8 @@ int get_physical_address(CPULoongArchState *env, hwaddr *physical,
     uint8_t da = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, DA);
     uint8_t pg = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PG);
 
+    if (!is_la64(env)) address = (uint32_t)address;
+
     /* Check PG and DA */
     if (da && !pg) {
         *physical = address & TARGET_PHYS_MASK;
@@ -325,7 +327,6 @@ int get_physical_address(CPULoongArchState *env, hwaddr *physical,
     }
 
     plv = kernel_mode | (user_mode << R_CSR_DMW_PLV3_SHIFT);
-    if (!is_la64(env)) address = (uint32_t)address;
     if (is_la64(env)) {
         base_v = address >> R_CSR_DMW_64_VSEG_SHIFT;
     } else {
@@ -580,15 +581,16 @@ int get_physical_address_debug(CPULoongArchState *env, hwaddr *physical,
     uint8_t da = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, DA);
     uint8_t pg = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PG);
 
+    if (!is_la64(env)) address = (uint32_t)address;
+
     /* Check PG and DA */
-    if (da & !pg) {
+    if (da && !pg) {
         *physical = address & TARGET_PHYS_MASK;
         *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
         return TLBRET_MATCH;
     }
 
     plv = kernel_mode | (user_mode << R_CSR_DMW_PLV3_SHIFT);
-    if (!is_la64(env)) address = (uint32_t)address;
     if (is_la64(env)) {
         base_v = address >> R_CSR_DMW_64_VSEG_SHIFT;
     } else {
@@ -618,4 +620,3 @@ int get_physical_address_debug(CPULoongArchState *env, hwaddr *physical,
     return loongarch_map_address_debug(env, physical, prot, address,
                                         access_type, mmu_idx);
 }
-

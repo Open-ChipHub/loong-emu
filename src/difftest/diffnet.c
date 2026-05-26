@@ -67,6 +67,25 @@ static inline uint64_t reg_from_bin(const uint8_t *bin)
     return val;
 }
 
+static inline uint64_t reg_from_bin_sized(const uint8_t *bin, int bytes)
+{
+    if (bytes == 4) {
+        uint32_t v32 = (uint32_t)bin[0] | ((uint32_t)bin[1] << 8) |
+                       ((uint32_t)bin[2] << 16) | ((uint32_t)bin[3] << 24);
+        return (uint64_t)(int64_t)(int32_t)v32;
+    }
+    return reg_from_bin(bin);
+}
+
+static bool qemu_reg_matches(int regnum, uint64_t emu_val)
+{
+    uint8_t single[8] = {0};
+    if (qrsp_read_register(&g_qrsp, regnum, single, g_reg_bytes) != g_reg_bytes) {
+        return false;
+    }
+    return reg_from_bin_sized(single, g_reg_bytes) == emu_val;
+}
+
 /* ---- CSR trampoline: run pre-encoded dump blob on emu side ---- */
 /* Saves original memory at dump_addr, runs the blob, restores memory. */
 static void emu_csr_trampoline(CPULoongArchState *env)
@@ -196,13 +215,9 @@ int diffnet_init(const char *host, int port, CPULoongArchState *env)
 
     /* Sync emu's initial GPRs from QEMU. Detect register size from g-packet. */
     uint8_t reg_buf[280];
-    if (qrsp_read_g_packet(&g_qrsp, reg_buf, sizeof(reg_buf)) == 0) {
-        /* Detect LA32 vs LA64: check if upper half of buffer is all zeros.
-         * LA32 returns 140 bytes (35×4), LA64 returns 280 bytes (35×8). */
-        int zero = 1;
-        for (int i = 140; i < 280; i++)
-            if (reg_buf[i]) { zero = 0; break; }
-        g_reg_bytes = zero ? 4 : 8;
+    int reg_len = qrsp_read_g_packet(&g_qrsp, reg_buf, sizeof(reg_buf));
+    if (reg_len > 0) {
+        g_reg_bytes = reg_len <= 140 ? 4 : 8;
         fprintf(stderr, "DIFFNET: detected %d-byte registers\n", g_reg_bytes);
 
         const uint8_t *bin = reg_buf;
@@ -260,7 +275,7 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
 
 #define CMP_HDR() do { \
     if (mismatch == 0) { \
-        uint64_t _pc = reg_from_bin(g_bin + 33 * g_reg_bytes); \
+        uint64_t _pc = reg_from_bin_sized(g_bin + 33 * g_reg_bytes, g_reg_bytes); \
         fprintf(stderr, "\n=== MISMATCH batch=%ld icount=%ld prev_pc=0x%016lx qemu_pc=0x%016lx ===\n", \
                 g_batch_count, env->icount, env->prev_pc, _pc); \
     } \
@@ -268,30 +283,24 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
 
     /* ---- 1. GPRs (r0-r31) + PC (always compared) ---- */
     for (int i = 0; i < 32; i++) {
-        uint64_t qemu_val;
-        if (g_reg_bytes == 4) {
-            uint32_t v32 = (uint32_t)g_bin[i*4] | ((uint32_t)g_bin[i*4+1] << 8) |
-                           ((uint32_t)g_bin[i*4+2] << 16) | ((uint32_t)g_bin[i*4+3] << 24);
-            qemu_val = (uint64_t)(int64_t)(int32_t)v32;
-        } else {
-            qemu_val = reg_from_bin(g_bin + i * 8);
-        }
+        uint64_t qemu_val = reg_from_bin_sized(g_bin + i * g_reg_bytes,
+                                               g_reg_bytes);
         if (env->gpr[i] != qemu_val) {
+            if (qemu_reg_matches(i, env->gpr[i])) {
+                continue;
+            }
             CMP_HDR(); mismatch++;
             fprintf(stderr, "  gpr %-4s: emu=0x%016lx  qemu=0x%016lx\n",
                     regnames[i], env->gpr[i], qemu_val);
         }
     }
     {
-        uint64_t qemu_pc;
-        if (g_reg_bytes == 4) {
-            uint32_t v32 = (uint32_t)g_bin[33*4] | ((uint32_t)g_bin[33*4+1] << 8) |
-                           ((uint32_t)g_bin[33*4+2] << 16) | ((uint32_t)g_bin[33*4+3] << 24);
-            qemu_pc = (uint64_t)(int32_t)v32;
-        } else {
-            qemu_pc = reg_from_bin(g_bin + 33 * 8);
-        }
+        uint64_t qemu_pc = reg_from_bin_sized(g_bin + 33 * g_reg_bytes,
+                                              g_reg_bytes);
         if (env->pc != qemu_pc) {
+            if (qemu_reg_matches(33, env->pc)) {
+                return mismatch;
+            }
             CMP_HDR(); mismatch++;
             fprintf(stderr, "  PC  : emu=0x%016lx  qemu=0x%016lx\n", env->pc, qemu_pc);
         }

@@ -297,7 +297,7 @@ static bool trans_mulw_d_wu(CPULoongArchState *env, arg_mulw_d_wu *restrict a) {
 }
 static bool trans_div_w(CPULoongArchState *env, arg_div_w *restrict a) {
     int32_t rj = (int32_t)env->gpr[a->rj], rk = (int32_t)env->gpr[a->rk];
-    if (rk == 0) env->gpr[a->rd] = 0;
+    if (rk == 0) env->gpr[a->rd] = (int64_t)rj;
     else if (rj == INT32_MIN && rk == -1) env->gpr[a->rd] = (int64_t)(int32_t)rj;
     else env->gpr[a->rd] = (int64_t)(int32_t)(rj / rk);
     env->pc += 4;
@@ -313,7 +313,7 @@ static bool trans_mod_w(CPULoongArchState *env, arg_mod_w *restrict a) {
 }
 static bool trans_div_wu(CPULoongArchState *env, arg_div_wu *restrict a) {
     uint32_t rj = (uint32_t)env->gpr[a->rj], rk = (uint32_t)env->gpr[a->rk];
-    env->gpr[a->rd] = rk ? (int64_t)(int32_t)(rj / rk) : 0;
+    env->gpr[a->rd] = (int64_t)(int32_t)(rk ? rj / rk : rj);
     env->pc += 4;
     return true;
 }
@@ -325,7 +325,7 @@ static bool trans_mod_wu(CPULoongArchState *env, arg_mod_wu *restrict a) {
 }
 static bool trans_div_d(CPULoongArchState *env, arg_div_d *restrict a) {
     int64_t rj = (int64_t)env->gpr[a->rj], rk = (int64_t)env->gpr[a->rk];
-    if (rk == 0) env->gpr[a->rd] = 0;
+    if (rk == 0) env->gpr[a->rd] = rj;
     else if (rj == INT64_MIN && rk == -1) env->gpr[a->rd] = rj;
     else env->gpr[a->rd] = rj / rk;
     env->pc += 4;
@@ -341,7 +341,7 @@ static bool trans_mod_d(CPULoongArchState *env, arg_mod_d *restrict a) {
 }
 static bool trans_div_du(CPULoongArchState *env, arg_div_du *restrict a) {
     uint64_t rj = env->gpr[a->rj], rk = env->gpr[a->rk];
-    env->gpr[a->rd] = rk ? rj / rk : 0;
+    env->gpr[a->rd] = rk ? rj / rk : rj;
     env->pc += 4;
     return true;
 }
@@ -367,7 +367,7 @@ static bool trans_alsl_d(CPULoongArchState *env, arg_alsl_d *restrict a) {
     return true;
 }
 static bool trans_lu12i_w(CPULoongArchState *env, arg_lu12i_w *restrict a) {
-    env->gpr[a->rd] = (int64_t)(a->imm << 12);
+    env->gpr[a->rd] = (int64_t)a->imm << 12;
     env->pc += 4;
     return true;
 }
@@ -382,23 +382,23 @@ static bool trans_lu52i_d(CPULoongArchState *env, arg_lu52i_d *restrict a) {
     return true;
 }
 static bool trans_pcaddi(CPULoongArchState *env, arg_pcaddi *restrict a) {
-    env->gpr[a->rd] = env->pc + (a->imm << 2);
+    env->gpr[a->rd] = env->pc + ((int64_t)a->imm << 2);
     env->pc += 4;
     return true;
 }
 static bool trans_pcalau12i(CPULoongArchState *env, arg_pcalau12i *restrict a) {
-    env->gpr[a->rd] = env->pc + (a->imm << 12);
+    env->gpr[a->rd] = env->pc + ((int64_t)a->imm << 12);
     env->gpr[a->rd] &= ~0xfffull;
     env->pc += 4;
     return true;
 }
 static bool trans_pcaddu12i(CPULoongArchState *env, arg_pcaddu12i *restrict a) {
-    env->gpr[a->rd] = env->pc + (a->imm << 12);
+    env->gpr[a->rd] = env->pc + ((int64_t)a->imm << 12);
     env->pc += 4;
     return true;
 }
 static bool trans_pcaddu18i(CPULoongArchState *env, arg_pcaddu18i *restrict a) {
-    env->gpr[a->rd] = env->pc + (a->imm << 18);
+    env->gpr[a->rd] = env->pc + ((int64_t)a->imm << 18);
     env->pc += 4;
     return true;
 }
@@ -487,7 +487,7 @@ static bool trans_slli_d(CPULoongArchState *env, arg_slli_d *restrict a) {
     return true;
 }
 static bool trans_srli_w(CPULoongArchState *env, arg_srli_w *restrict a) {
-    env->gpr[a->rd] = (int64_t)((uint32_t)env->gpr[a->rj] >> a->imm);
+    env->gpr[a->rd] = (int64_t)(int32_t)((uint32_t)env->gpr[a->rj] >> a->imm);
     env->pc += 4;
     return true;
 }

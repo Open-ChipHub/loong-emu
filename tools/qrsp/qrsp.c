@@ -265,7 +265,7 @@ int qrsp_read_g_packet(qrsp_conn_t *conn, uint8_t *bin_buf, int buf_size)
         }
         bin_buf[i] = (uint8_t)((hi << 4) | lo);
     }
-    return 0;
+    return bytes;
 }
 
 uint64_t qrsp_hex_decode_le64(const char *hex)

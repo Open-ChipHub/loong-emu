@@ -84,6 +84,11 @@ extern void show_register_fpr(CPULoongArchState *env);
 extern void set_fetch_breakpoint(int idx, target_long pc);
 extern void restore_checkpoint(CPULoongArchState *env, char* image_dir);
 
+void laemu_host_quit(void)
+{
+    laemu_exit(0);
+}
+
 #ifdef CONFIG_CLI
 static void sigaction_entry_int(int signal, siginfo_t *si, void *arg) {
     if (check_signal > 3) {
@@ -1443,7 +1448,7 @@ int main(int argc, char** argv, char **envp) {
         term_saved = true;
 
         struct termios raw = saved_termios;
-        raw.c_lflag &= ~(ECHO | ICANON);
+        raw.c_lflag &= ~(ECHO | ICANON | ISIG);
         tcsetattr(STDIN_FILENO, TCSANOW, &raw);
         fcntl(STDIN_FILENO, F_SETFL, saved_stdin_flags | O_NONBLOCK);
     }

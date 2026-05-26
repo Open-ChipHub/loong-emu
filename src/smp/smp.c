@@ -454,13 +454,25 @@ int loongarch_smp_run(void)
         bool ran = false;
 
         for (CPUState *cpu = first_cpu; cpu; cpu = CPU_NEXT(cpu)) {
+            current_cpu = cpu;
+            current_env = cpu->env;
             if (cpu->halted) {
-                continue;
+                loongarch_cpu_check_irq(cpu->env);
+                if (cpu->halted) {
+                    if (!cpu->env->pc) {
+                        continue;
+                    }
+                    /*
+                     * Linux idle loops are allowed to observe spurious wakeups.
+                     * Keep a parked vCPU polling so software reschedule state
+                     * that is not modeled as a hardware IRQ cannot strand a lock
+                     * owner forever while another vCPU spins.
+                     */
+                    cpu->halted = 0;
+                }
             }
 
             ran = true;
-            current_cpu = cpu;
-            current_env = cpu->env;
             int ret = exec_env(cpu->env);
             if (ret != 3) {
                 return ret;

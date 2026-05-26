@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "serial_plus.h"
+#include "serial.h"
 #include "cpu.h"
 
 #define UART_LCR_DLAB    0x80
@@ -409,7 +410,7 @@ void serial_check_io(SerialState *s)
             abort();
         } else if (cnt == 0) {
             return;
-        } else if (cnt == 1) {
+        } else if (cnt == 1 && serial_handle_host_input(&c)) {
             serial_receive1(s, &c, 1);
             fifo_timeout_int(s);
         }

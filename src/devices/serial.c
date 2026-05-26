@@ -66,6 +66,30 @@ static SerialState s;
 static char   input = 'x';
 static bool   input_valid;
 static qemu_irq serial_irq;
+static bool host_escape_pending;
+
+extern void laemu_host_quit(void);
+
+bool serial_handle_host_input(uint8_t *ch)
+{
+    if (host_escape_pending) {
+        host_escape_pending = false;
+        if (*ch == 'x' || *ch == 'X') {
+            laemu_host_quit();
+        }
+        if (*ch == 0x01) {
+            return true;
+        }
+        return false;
+    }
+
+    if (*ch == 0x01) {
+        host_escape_pending = true;
+        return false;
+    }
+
+    return true;
+}
 
 static void serial_update_irq(void)
 {
@@ -93,8 +117,12 @@ void serial_ioport_init(qemu_irq irq)
 static void try_read(void)
 {
     if (!input_valid) {
-        if (read(STDIN_FILENO, &input, 1) == 1) {
-            input_valid = true;
+        uint8_t ch;
+        if (read(STDIN_FILENO, &ch, 1) == 1) {
+            if (serial_handle_host_input(&ch)) {
+                input = ch;
+                input_valid = true;
+            }
         }
     }
     serial_update_irq();

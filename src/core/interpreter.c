@@ -661,15 +661,17 @@ static bool trans_bitrev_d(CPULoongArchState *env, arg_bitrev_d *restrict a) {
     return true;
 }
 static bool trans_bytepick_w(CPULoongArchState *env, arg_bytepick_w *restrict a) {
-    uint64_t t = (env->gpr[a->rk] << 32) | (uint32_t)env->gpr[a->rj];
-    env->gpr[a->rd] = (int64_t)(int32_t)(t >> (32 - a->sa * 8));
+    uint64_t rj = (uint32_t)env->gpr[a->rj];
+    uint64_t rk = (uint32_t)env->gpr[a->rk];
+    uint64_t res = a->sa == 0 ? rk : ((rk >> (a->sa * 8)) | (rj << (32 - a->sa * 8)));
+    env->gpr[a->rd] = (int64_t)(int32_t)res;
     env->pc += 4;
     return true;
 }
 static bool trans_bytepick_d(CPULoongArchState *env, arg_bytepick_d *restrict a) {
-    uint64_t high = env->gpr[a->rk] << (a->sa * 8);
-    uint64_t low  = env->gpr[a->rj] >> (64 - a->sa * 8);
-    env->gpr[a->rd] = high | low;
+    uint64_t rj = env->gpr[a->rj];
+    uint64_t rk = env->gpr[a->rk];
+    env->gpr[a->rd] = a->sa == 0 ? rk : ((rk >> (a->sa * 8)) | (rj << (64 - a->sa * 8)));
     env->pc += 4;
     return true;
 }

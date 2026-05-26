@@ -12,6 +12,7 @@
 
 #include "sizes.h"
 #include "cpu.h"
+#include "cpu-csr.h"
 #include "internals.h"
 
 #if defined(CONFIG_GDB)
@@ -557,6 +558,9 @@ fail:
 
 /* Reset CPU state to initial values: PLV=0, interrupts disabled, DA=1, PG=0. */
 void cpu_reset(CPUState* cs) {
+
+    uint8_t tlb_ps;
+
     CPULoongArchState *env = cpu_env(cs);
     env->fcsr0_mask = FCSR0_M1 | FCSR0_M2 | FCSR0_M3;
     env->fcsr0 = 0x0;
@@ -588,6 +592,15 @@ void cpu_reset(CPUState* cs) {
     env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR, 0);
     env->CSR_MERRCTL = FIELD_DP64(env->CSR_MERRCTL, CSR_MERRCTL, ISMERR, 0);
     env->CSR_TID = cs->cpu_index;
+
+    /* set CSR_PWCL.PTBASE and CSR_STLBPS.PS bits from CSR_PRCFG2 */
+    if (env->CSR_PRCFG2 == 0) {
+        env->CSR_PRCFG2 = 0x3fffff000;
+    }
+    tlb_ps = ctz32(env->CSR_PRCFG2);
+
+    env->CSR_STLBPS = FIELD_DP64(env->CSR_STLBPS, CSR_STLBPS, PS, tlb_ps);
+    env->CSR_PWCL = FIELD_DP64(env->CSR_PWCL, CSR_PWCL, PTBASE, tlb_ps);
 
     for (n = 0; n < 4; n++) {
         env->CSR_DMW[n] = FIELD_DP64(env->CSR_DMW[n], CSR_DMW, PLV0, 0);

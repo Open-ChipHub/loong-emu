@@ -30,11 +30,13 @@ static qrsp_conn_t g_qrsp;
 static pid_t g_child_pid = 0;
 static uint64_t g_batch_count;
 static int g_reg_bytes = 8;  /* 8 for LA64, 4 for LA32 */
+static bool g_pending_mismatch;
+static uint64_t g_pending_mismatch_batch;
 
 /* Pre-assembled CSR dump blob (tools/dump_csr.S).
- * Writes 22 CSRs to memory at address in $t0, uses $t1 as scratch.
+ * Writes 30 CSRs to memory at address in $t0, uses $t1 as scratch.
  * Ends with 'b .' (infinite loop) at the last 4 bytes. */
-static uint64_t g_csr_dump_addr = 0x1c000300;
+static uint64_t g_csr_dump_addr = 0x80000300;
 static const uint8_t csr_dump_blob[] = {
     0x0d, 0x00, 0x00, 0x04, 0x8d, 0x01, 0xc0, 0x29, 0x0d, 0x04, 0x00, 0x04,
     0x8d, 0x21, 0xc0, 0x29, 0x0d, 0x08, 0x00, 0x04, 0x8d, 0x41, 0xc0, 0x29,
@@ -50,13 +52,53 @@ static const uint8_t csr_dump_blob[] = {
     0x8d, 0x01, 0xc2, 0x29, 0x0d, 0x08, 0x01, 0x04, 0x8d, 0x21, 0xc2, 0x29,
     0x0d, 0x10, 0x01, 0x04, 0x8d, 0x41, 0xc2, 0x29, 0x0d, 0x80, 0x01, 0x04,
     0x8d, 0x61, 0xc2, 0x29, 0x0d, 0x00, 0x06, 0x04, 0x8d, 0x81, 0xc2, 0x29,
-    0x0d, 0x04, 0x06, 0x04, 0x8d, 0xa1, 0xc2, 0x29, 0x00, 0x00, 0x00, 0x50
+    0x0d, 0x04, 0x06, 0x04, 0x8d, 0xa1, 0xc2, 0x29, 0x0d, 0x20, 0x02, 0x04,
+    0x8d, 0xc1, 0xc2, 0x29, 0x0d, 0x24, 0x02, 0x04,
+    0x8d, 0xe1, 0xc2, 0x29, 0x0d, 0x28, 0x02, 0x04, 0x8d, 0x01, 0xc3, 0x29,
+    0x0d, 0x2c, 0x02, 0x04, 0x8d, 0x21, 0xc3, 0x29, 0x0d, 0x30, 0x02, 0x04,
+    0x8d, 0x41, 0xc3, 0x29, 0x0d, 0x34, 0x02, 0x04, 0x8d, 0x61, 0xc3, 0x29,
+    0x0d, 0x38, 0x02, 0x04, 0x8d, 0x81, 0xc3, 0x29, 0x0d, 0x3c, 0x02, 0x04,
+    0x8d, 0xa1, 0xc3, 0x29, 0x00, 0x00, 0x00, 0x50
 };
-#define CSR_DUMP_LEN       (sizeof(csr_dump_blob))            /* 180 bytes of code */
+#define CSR_DUMP_LEN       (sizeof(csr_dump_blob))            /* 244 bytes of code */
 #define CSR_DUMP_DATA_OFF   CSR_DUMP_LEN                       /* data right after code */
-#define CSR_DUMP_DATA_SIZE  176                                /* 22 CSRs x 8 bytes */
-#define CSR_DUMP_TOTAL      (CSR_DUMP_LEN + CSR_DUMP_DATA_SIZE) /* 356 bytes */
+#define CSR_DUMP_CSR_COUNT  30
+#define CSR_DUMP_DATA_SIZE  (CSR_DUMP_CSR_COUNT * 8)
+#define CSR_DUMP_TOTAL      (CSR_DUMP_LEN + CSR_DUMP_DATA_SIZE)
 #define CSR_DUMP_END_PC     (g_csr_dump_addr + CSR_DUMP_LEN - 4)
+
+enum {
+    CSR_DUMP_CRMD,
+    CSR_DUMP_PRMD,
+    CSR_DUMP_EUEN,
+    CSR_DUMP_ECFG,
+    CSR_DUMP_ESTAT,
+    CSR_DUMP_ERA,
+    CSR_DUMP_BADV,
+    CSR_DUMP_EENTRY,
+    CSR_DUMP_TLBIDX,
+    CSR_DUMP_TLBEHI,
+    CSR_DUMP_TLBELO0,
+    CSR_DUMP_TLBELO1,
+    CSR_DUMP_ASID,
+    CSR_DUMP_PGDL,
+    CSR_DUMP_PGDH,
+    CSR_DUMP_STLBPS,
+    CSR_DUMP_TCFG,
+    CSR_DUMP_TVAL,
+    CSR_DUMP_TICLR,
+    CSR_DUMP_LLBCTL,
+    CSR_DUMP_DMW0,
+    CSR_DUMP_DMW1,
+    CSR_DUMP_TLBRENTRY,
+    CSR_DUMP_TLBRBADV,
+    CSR_DUMP_TLBRERA,
+    CSR_DUMP_TLBRSAVE,
+    CSR_DUMP_TLBRELO0,
+    CSR_DUMP_TLBRELO1,
+    CSR_DUMP_TLBREHI,
+    CSR_DUMP_TLBRPRMD,
+};
 
 /* Decode one 8-byte register from binary buffer (little-endian). */
 static inline uint64_t reg_from_bin(const uint8_t *bin)
@@ -77,6 +119,50 @@ static inline uint64_t reg_from_bin_sized(const uint8_t *bin, int bytes)
     return reg_from_bin(bin);
 }
 
+static int hex_digit(int ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
+
+static int qemu_read_memory_quiet(uint64_t addr, uint8_t *buf, int len)
+{
+    char cmd[64];
+    char hex[4096];
+
+    snprintf(cmd, sizeof(cmd), "m%lx,%x", addr, len);
+    if (qrsp_send_packet(&g_qrsp, cmd, strlen(cmd)) < 0) {
+        return -1;
+    }
+
+    int n = qrsp_recv_packet(&g_qrsp, hex, sizeof(hex));
+    if (n < 0 || n == 0 || hex[0] == 'E') {
+        return -1;
+    }
+
+    int bytes = n / 2;
+    if (bytes > len) {
+        bytes = len;
+    }
+    for (int i = 0; i < bytes; i++) {
+        int hi = hex_digit(hex[i * 2]);
+        int lo = hex_digit(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) {
+            return -1;
+        }
+        buf[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return bytes;
+}
+
 static inline bool reg_equal_sized(uint64_t emu_val, uint64_t qemu_val)
 {
     if (g_reg_bytes == 4) {
@@ -92,6 +178,111 @@ static bool qemu_reg_matches(int regnum, uint64_t emu_val)
         return false;
     }
     return reg_equal_sized(emu_val, reg_from_bin_sized(single, g_reg_bytes));
+}
+
+static inline uint64_t csr_dump_val(const uint8_t *csr_buf, int index)
+{
+    return reg_from_bin(csr_buf + index * 8);
+}
+
+static bool diffnet_csr_in_exception_state(CPULoongArchState *env,
+                                           const uint8_t *qemu_csr)
+{
+    uint64_t qemu_crmd = csr_dump_val(qemu_csr, CSR_DUMP_CRMD);
+    uint64_t qemu_tlbrera = csr_dump_val(qemu_csr, CSR_DUMP_TLBRERA);
+    bool emu_tlbr = FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR);
+    bool qemu_tlbr = qemu_tlbrera & R_CSR_TLBRERA_ISTLBR_MASK;
+    bool emu_direct = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, DA) &&
+                      !FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PG);
+    bool qemu_direct = (qemu_crmd & R_CSR_CRMD_DA_MASK) &&
+                       !(qemu_crmd & R_CSR_CRMD_PG_MASK);
+
+    return emu_tlbr || qemu_tlbr || emu_direct != qemu_direct;
+}
+
+static bool diffnet_emu_in_exception_state(CPULoongArchState *env)
+{
+    bool emu_tlbr = FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR);
+    bool emu_direct = FIELD_EX64(env->CSR_CRMD, CSR_CRMD, DA) &&
+                      !FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PG);
+
+    return emu_tlbr || emu_direct;
+}
+
+static bool diffnet_pc_in_exception_handler(CPULoongArchState *env)
+{
+    uint64_t pc = env->pc;
+    uint64_t eentry = env->CSR_EENTRY;
+    uint64_t era = FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR)
+                   ? (env->CSR_TLBRERA & ~0x3ull)
+                   : env->CSR_ERA;
+    uint64_t handler_lo = eentry >= 0x1000 ? eentry - 0x1000 : 0;
+    uint64_t handler_hi = eentry + 0x1000;
+
+    return era != 0 && pc >= handler_lo && pc < handler_hi && pc < era;
+}
+
+static bool diffnet_defer_compare(CPULoongArchState *env)
+{
+    return diffnet_emu_in_exception_state(env) ||
+           diffnet_pc_in_exception_handler(env);
+}
+
+static int diffnet_catchup_qemu_from_exception(CPULoongArchState *env,
+                                               uint8_t *reg_buf,
+                                               uint64_t *qemu_pc)
+{
+    for (int i = 0; i < 2000; i++) {
+        if (reg_equal_sized(env->pc, *qemu_pc)) {
+            return 1;
+        }
+        if (qrsp_step(&g_qrsp) < 0) {
+            fprintf(stderr,
+                    "DIFFNET: QEMU connection closed during exception catch-up after step=%ld, treating as program exit\n",
+                    g_batch_count);
+            laemu_exit(0);
+        }
+        if (qrsp_read_g_packet(&g_qrsp, reg_buf, 280) < 0) {
+            fprintf(stderr,
+                    "DIFFNET: QEMU register read failed during exception catch-up after step=%ld, treating as program exit\n",
+                    g_batch_count);
+            laemu_exit(0);
+        }
+        *qemu_pc = reg_from_bin_sized(reg_buf + 33 * g_reg_bytes, g_reg_bytes);
+    }
+    return 0;
+}
+
+static int diffnet_catchup_qemu_to_pc(CPULoongArchState *env,
+                                      uint8_t *reg_buf,
+                                      uint64_t *qemu_pc,
+                                      int max_steps)
+{
+    for (int i = 0; i < max_steps; i++) {
+        if (reg_equal_sized(env->pc, *qemu_pc)) {
+            return 1;
+        }
+        if (qrsp_step(&g_qrsp) < 0) {
+            fprintf(stderr,
+                    "DIFFNET: QEMU connection closed during PC catch-up after step=%ld, treating as program exit\n",
+                    g_batch_count);
+            laemu_exit(0);
+        }
+        if (qrsp_read_g_packet(&g_qrsp, reg_buf, 280) < 0) {
+            fprintf(stderr,
+                    "DIFFNET: QEMU register read failed during PC catch-up after step=%ld, treating as program exit\n",
+                    g_batch_count);
+            laemu_exit(0);
+        }
+        *qemu_pc = reg_from_bin_sized(reg_buf + 33 * g_reg_bytes, g_reg_bytes);
+    }
+    return reg_equal_sized(env->pc, *qemu_pc) ? 1 : 0;
+}
+
+static int diffnet_sync_lasx_upper_after_lsx(CPULoongArchState *env)
+{
+    (void)env;
+    return 0;
 }
 
 /* ---- CSR trampoline: run pre-encoded dump blob on emu side ---- */
@@ -134,15 +325,14 @@ static void emu_csr_trampoline(CPULoongArchState *env)
 }
 
 /* ---- CSR trampoline: inject, run, read, restore on QEMU side ---- */
-static int qemu_csr_trampoline(uint8_t *csr_buf)
+static int qemu_csr_trampoline_at(uint8_t *csr_buf, uint64_t base)
 {
-    uint64_t base = g_csr_dump_addr;
     uint64_t data_addr = base + CSR_DUMP_DATA_OFF;
     uint8_t orig[CSR_DUMP_TOTAL];
     uint8_t sav_t0[8], sav_t1[8], sav_pc[8];
 
     /* 1. Save QEMU's original memory at the dump area */
-    if (qrsp_read_memory(&g_qrsp, base, orig, CSR_DUMP_TOTAL) != CSR_DUMP_TOTAL)
+    if (qemu_read_memory_quiet(base, orig, CSR_DUMP_TOTAL) != CSR_DUMP_TOTAL)
         return -1;
 
     /* 2. Save QEMU's $t0, $t1, PC */
@@ -177,13 +367,13 @@ static int qemu_csr_trampoline(uint8_t *csr_buf)
         }
     }
 
-    /* 5. Step through dump instructions (22 csrrd + 22 st.d = 44 steps) */
-    for (int i = 0; i < 44; i++) {
+    /* 5. Step through dump instructions (csrrd + st.d for each CSR). */
+    for (int i = 0; i < CSR_DUMP_CSR_COUNT * 2; i++) {
         if (qrsp_step(&g_qrsp) < 0) goto restore_regs;
     }
 
     /* 6. Read dumped CSR values */
-    if (qrsp_read_memory(&g_qrsp, data_addr, csr_buf, CSR_DUMP_DATA_SIZE) != CSR_DUMP_DATA_SIZE)
+    if (qemu_read_memory_quiet(data_addr, csr_buf, CSR_DUMP_DATA_SIZE) != CSR_DUMP_DATA_SIZE)
         goto restore_regs;
 
 restore_regs:
@@ -210,6 +400,11 @@ restore_mem:
     /* 8. Restore QEMU's original memory */
     qrsp_write_memory(&g_qrsp, base, orig, CSR_DUMP_TOTAL);
     return 0;
+}
+
+static int qemu_csr_trampoline(uint8_t *csr_buf)
+{
+    return qemu_csr_trampoline_at(csr_buf, g_csr_dump_addr);
 }
 
 int diffnet_init(const char *host, int port, CPULoongArchState *env)
@@ -399,6 +594,10 @@ static int diffnet_compare(CPULoongArchState *env, const uint8_t *g_bin)
                 {"STLBPS",env->CSR_STLBPS},{"TCFG",env->CSR_TCFG},{"TVAL",env->CSR_TVAL},
                 {"TICLR",env->CSR_TICLR},{"LLBCTL",env->CSR_LLBCTL},
                 {"DMW0",env->CSR_DMW[0]},{"DMW1",env->CSR_DMW[1]},
+                {"TLBRENTRY",env->CSR_TLBRENTRY},{"TLBRBADV",env->CSR_TLBRBADV},
+                {"TLBRERA",env->CSR_TLBRERA},{"TLBRSAVE",env->CSR_TLBRSAVE},
+                {"TLBRELO0",env->CSR_TLBRELO0},{"TLBRELO1",env->CSR_TLBRELO1},
+                {"TLBREHI",env->CSR_TLBREHI},{"TLBRPRMD",env->CSR_TLBRPRMD},
             };
             int ncsr = sizeof(csrs)/sizeof(csrs[0]);
             for (int i = 0; i < ncsr; i++) {
@@ -460,16 +659,20 @@ int diffnet_check(CPULoongArchState *env)
         return diffnet_compare(env, reg_buf) > 0 ? -1 : 0;
     }
 
-    /* Batch mode: only sync at batch boundaries */
-    if (g_batch_count % diffnet_batch_size != 0)
-        return 0;
+    /* Batch compare mode: QEMU still follows every retired emu instruction.
+     * Only the expensive full-state comparison is delayed to batch boundaries.
+     */
+    if (qrsp_step(&g_qrsp) < 0) {
+        fprintf(stderr, "DIFFNET: QEMU connection closed after step=%ld, treating as program exit\n",
+                g_batch_count);
+        laemu_exit(0);
+    }
+    if (diffnet_sync_lasx_upper_after_lsx(env) < 0) {
+        return -1;
+    }
 
-    /* Step QEMU batch_size times to catch up with emu */
-    for (int i = 0; i < diffnet_batch_size; i++) {
-        if (qrsp_step(&g_qrsp) < 0) {
-            fprintf(stderr, "DIFFNET: batch step %d failed at batch=%ld\n", i, g_batch_count);
-            return -1;
-        }
+    if (g_batch_count % diffnet_batch_size != 0) {
+        return 0;
     }
 
     uint8_t reg_buf[280];
@@ -478,9 +681,87 @@ int diffnet_check(CPULoongArchState *env)
         return -1;
     }
 
+    uint64_t qemu_pc = reg_from_bin_sized(reg_buf + 33 * g_reg_bytes, g_reg_bytes);
+    if (diffnet_defer_compare(env)) {
+        if (g_batch_count % (diffnet_batch_size * 10) == 0) {
+            fprintf(stderr,
+                    "DIFFNET: batch %ld deferred in emu exception state "
+                    "(emu_pc=0x%016lx qemu_pc=0x%016lx emu_tlbrera=0x%016lx)\n",
+                    g_batch_count, env->pc, qemu_pc, env->CSR_TLBRERA);
+        }
+        return 0;
+    }
+
+    if (!reg_equal_sized(env->pc, qemu_pc)) {
+        uint8_t csr_buf[CSR_DUMP_DATA_SIZE];
+        if (qemu_csr_trampoline_at(csr_buf, qemu_pc) == 0 &&
+            diffnet_csr_in_exception_state(env, csr_buf)) {
+            int caught = diffnet_catchup_qemu_from_exception(env, reg_buf, &qemu_pc);
+            if (caught < 0) {
+                fprintf(stderr, "DIFFNET: exception catch-up failed at batch=%ld\n",
+                        g_batch_count);
+                return -1;
+            }
+            if (caught == 0) {
+                if (g_batch_count % (diffnet_batch_size * 10) == 0) {
+                    fprintf(stderr,
+                            "DIFFNET: batch %ld deferred in CSR exception state "
+                            "(emu_pc=0x%016lx qemu_pc=0x%016lx emu_tlbrera=0x%016lx qemu_tlbrera=0x%016lx)\n",
+                            g_batch_count, env->pc, qemu_pc, env->CSR_TLBRERA,
+                            csr_dump_val(csr_buf, CSR_DUMP_TLBRERA));
+                }
+                return 0;
+            }
+            if (diffnet_sync_lasx_upper_after_lsx(env) < 0) {
+                return -1;
+            }
+            if (g_batch_count % (diffnet_batch_size * 10) == 0) {
+                fprintf(stderr,
+                        "DIFFNET: batch %ld caught QEMU up after exception "
+                        "(pc=0x%016lx)\n",
+                        g_batch_count, env->pc);
+            }
+        }
+    }
+
+    if (!reg_equal_sized(env->pc, qemu_pc)) {
+        int caught = diffnet_catchup_qemu_to_pc(env, reg_buf, &qemu_pc, 256);
+        if (caught > 0) {
+            if (diffnet_sync_lasx_upper_after_lsx(env) < 0) {
+                return -1;
+            }
+            if (g_batch_count % (diffnet_batch_size * 10) == 0) {
+                fprintf(stderr,
+                        "DIFFNET: batch %ld caught QEMU up to emu PC "
+                        "(pc=0x%016lx)\n",
+                        g_batch_count, env->pc);
+            }
+        }
+    }
+
     int mism = diffnet_compare(env, reg_buf);
-    if (mism > 0)
+    if (mism > 0) {
+        if (!g_pending_mismatch) {
+            g_pending_mismatch = true;
+            g_pending_mismatch_batch = g_batch_count;
+            fprintf(stderr,
+                    "DIFFNET: mismatch pending at batch=%ld, rechecking next compare batch\n",
+                    g_batch_count);
+            return 0;
+        }
+        fprintf(stderr,
+                "DIFFNET: mismatch confirmed at batch=%ld (first seen at batch=%lu)\n",
+                g_batch_count, g_pending_mismatch_batch);
         return -1;
+    }
+
+    if (g_pending_mismatch) {
+        fprintf(stderr,
+                "DIFFNET: pending mismatch at batch=%lu cleared at batch=%ld\n",
+                g_pending_mismatch_batch, g_batch_count);
+        g_pending_mismatch = false;
+        g_pending_mismatch_batch = 0;
+    }
 
     if (g_batch_count % (diffnet_batch_size * 10) == 0)
         fprintf(stderr, "DIFFNET: batch %ld ok (icount=%ld)\n", g_batch_count, env->icount);

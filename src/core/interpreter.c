@@ -155,6 +155,9 @@ static inline int64_t get_fpr(CPULoongArchState *env, int reg_num) {
 static inline void set_fpr(CPULoongArchState *env, int reg_num, int64_t val) {
     env->fpr[reg_num].vreg.D[0] = val;
 }
+static inline void set_fpr_s(CPULoongArchState *env, int reg_num, uint32_t val) {
+    env->fpr[reg_num].vreg.UD[0] = 0xffffffff00000000ull | val;
+}
 
 /* bit0(signaling/quiet) bit1(lt) bit2(eq) bit3(un) bit4(neq) */
 static uint32_t get_fcmp_flags(int cond)
@@ -710,7 +713,7 @@ static bool trans_bstrpick_w(CPULoongArchState *env, arg_bstrpick_w *restrict a)
     if (a->ls > a->ms) {
         return false;
     }
-    env->gpr[a->rd] = (int64_t)extract32(env->gpr[a->rj], a->ls, a->ms - a->ls + 1);
+    env->gpr[a->rd] = (int64_t)(int32_t)extract32(env->gpr[a->rj], a->ls, a->ms - a->ls + 1);
     env->pc += 4;
     return true;
 }
@@ -1997,7 +2000,7 @@ static bool trans_movcf2gr(CPULoongArchState *env, arg_movcf2gr *restrict a) {
 }
 static bool trans_fld_s(CPULoongArchState *env, arg_fld_s *restrict a) {
     CHECK_FPE(8);
-    set_fpr(env, a->fd, ld_w(env, add_addr(env->gpr[a->rj], a->imm)));
+    set_fpr_s(env, a->fd, ld_w(env, add_addr(env->gpr[a->rj], a->imm)));
     env->pc += 4;
     return true;
 }
@@ -2021,7 +2024,7 @@ static bool trans_fst_d(CPULoongArchState *env, arg_fst_d *restrict a) {
 }
 static bool trans_fldx_s(CPULoongArchState *env, arg_fldx_s *restrict a) {
     CHECK_FPE(8);
-    set_fpr(env, a->fd, ld_w(env, add_addr(env->gpr[a->rj], env->gpr[a->rk])));
+    set_fpr_s(env, a->fd, ld_w(env, add_addr(env->gpr[a->rj], env->gpr[a->rk])));
     env->pc += 4;
     return true;
 }
@@ -2046,7 +2049,7 @@ static bool trans_fstx_d(CPULoongArchState *env, arg_fstx_d *restrict a) {
 static bool trans_fldgt_s(CPULoongArchState *env, arg_fldgt_s *restrict a) {
     CHECK_FPE(8);
     if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_w(env, env->gpr[a->rj]));
+        set_fpr_s(env, a->fd, ld_w(env, env->gpr[a->rj]));
     env->pc += 4; return true;
 }
 static bool trans_fldgt_d(CPULoongArchState *env, arg_fldgt_d *restrict a) {
@@ -2058,7 +2061,7 @@ static bool trans_fldgt_d(CPULoongArchState *env, arg_fldgt_d *restrict a) {
 static bool trans_fldle_s(CPULoongArchState *env, arg_fldle_s *restrict a) {
     CHECK_FPE(8);
     if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_w(env, env->gpr[a->rj]));
+        set_fpr_s(env, a->fd, ld_w(env, env->gpr[a->rj]));
     env->pc += 4; return true;
 }
 static bool trans_fldle_d(CPULoongArchState *env, arg_fldle_d *restrict a) {
@@ -5092,17 +5095,85 @@ gen_trans_vvvd(xvsubwod_q_du, 32, vsubwod_q_du)
 gen_trans_vvvd(xvsubwod_w_h, 32, vsubwod_w_h)
 gen_trans_vvvd(xvsubwod_w_hu, 32, vsubwod_w_hu)
 
+static inline bool insn_match_bits(uint32_t insn, uint32_t value, uint32_t mask)
+{
+    return (insn & mask) == value;
+}
+
+static bool lsx_insn_writes_vr(uint32_t insn)
+{
+    if (insn_match_bits(insn, 0x30100000, 0xfff80000) ||
+        insn_match_bits(insn, 0x30200000, 0xfff00000) ||
+        insn_match_bits(insn, 0x30400000, 0xffe00000) ||
+        insn_match_bits(insn, 0x30800000, 0xffc00000)) {
+        return true; /* QEMU vldrepl.* gvec forms clear the LASX tail. */
+    }
+
+    if (insn_match_bits(insn, 0x0d100000, 0xfff00000) ||
+        insn_match_bits(insn, 0x70000000, 0xfff00000) ||
+        insn_match_bits(insn, 0x70100000, 0xffff8000) ||
+        insn_match_bits(insn, 0x70700000, 0xfff00000) ||
+        insn_match_bits(insn, 0x70e00000, 0xfff00000) ||
+        insn_match_bits(insn, 0x710e8000, 0xffff8000) ||
+        insn_match_bits(insn, 0x710f0000, 0xffff8000) ||
+        insn_match_bits(insn, 0x710f8000, 0xffff8000) ||
+        insn_match_bits(insn, 0x72800000, 0xfff80000) ||
+        insn_match_bits(insn, 0x72880000, 0xfffe0000) ||
+        insn_match_bits(insn, 0x728a0000, 0xfffe0000) ||
+        insn_match_bits(insn, 0x728c0000, 0xfffe0000) ||
+        insn_match_bits(insn, 0x72900000, 0xfff80000) ||
+        insn_match_bits(insn, 0x71260000, 0xffff8000) ||
+        insn_match_bits(insn, 0x71268000, 0xffff8000) ||
+        insn_match_bits(insn, 0x71270000, 0xffff8000) ||
+        insn_match_bits(insn, 0x71278000, 0xffff8000) ||
+        insn_match_bits(insn, 0x71280000, 0xffff8000) ||
+        insn_match_bits(insn, 0x71288000, 0xffff8000) ||
+        insn_match_bits(insn, 0x0d500000, 0xfff00000) ||
+        insn_match_bits(insn, 0x717a8000, 0xffff8000) ||
+        insn_match_bits(insn, 0x717b0000, 0xffff8000) ||
+        insn_match_bits(insn, 0x717b8000, 0xffff8000) ||
+        insn_match_bits(insn, 0x73100000, 0xfff00000) ||
+        insn_match_bits(insn, 0x73200000, 0xfff00000) ||
+        insn_match_bits(insn, 0x73300000, 0xfff00000) ||
+        insn_match_bits(insn, 0x72a02000, 0xffffe000) ||
+        insn_match_bits(insn, 0x72a04000, 0xffffc000) ||
+        insn_match_bits(insn, 0x72a08000, 0xffff8000) ||
+        insn_match_bits(insn, 0x72a10000, 0xffff0000) ||
+        insn_match_bits(insn, 0x72f78000, 0xffffc000) ||
+        insn_match_bits(insn, 0x72f7c000, 0xffffe000) ||
+        insn_match_bits(insn, 0x72f7e000, 0xfffff000) ||
+        insn_match_bits(insn, 0x72f7f000, 0xfffff800) ||
+        insn_match_bits(insn, 0x73c40000, 0xfffc0000) ||
+        insn_match_bits(insn, 0x73d00000, 0xfff00000) ||
+        insn_match_bits(insn, 0x73e00000, 0xfffc0000)) {
+        return true; /* QEMU gvec LSX forms clear the LASX tail. */
+    }
+
+    return false;
+}
+
 /* Decode and execute a single instruction. Returns true on success. Uses icache to skip re-decoding. */
 bool interpreter(CPULoongArchState *env, uint32_t insn, INSCache* ic) {
     env->last_insn_name = NULL;
 
     if (ic) {
+        env->last_insn_name = ic->name;
         ic->trans_func(env, ic->arg);
+        if (lsx_insn_writes_vr(insn)) {
+            uint32_t vd = insn & 0x1f;
+            env->fpr[vd].vreg.UD[2] = 0;
+            env->fpr[vd].vreg.UD[3] = 0;
+        }
         env->gpr[0] = 0;
         insn_stats_classify_and_record(insn, ic->name);
         return true;
     }
     if (decode(env, insn)) {
+        if (lsx_insn_writes_vr(insn)) {
+            uint32_t vd = insn & 0x1f;
+            env->fpr[vd].vreg.UD[2] = 0;
+            env->fpr[vd].vreg.UD[3] = 0;
+        }
         env->gpr[0] = 0;
         insn_stats_classify_and_record(insn, env->last_insn_name);
         return true;

@@ -47,7 +47,11 @@ static int recv_exact(qrsp_conn_t *conn, void *buf, int n)
     int off = 0;
     while (off < n) {
         ssize_t r = read(conn->fd, (char *)buf + off, n - off);
-        if (r <= 0) return -1;
+        if (r == 0) return QRSP_EOF;
+        if (r < 0) {
+            if (errno == ECONNRESET) return QRSP_EOF;
+            return -1;
+        }
         off += r;
     }
     return 0;
@@ -65,7 +69,11 @@ static int send_raw(qrsp_conn_t *conn, const char *buf, int len)
     int off = 0;
     while (off < len) {
         ssize_t w = write(conn->fd, buf + off, len - off);
-        if (w <= 0) return -1;
+        if (w == 0) return QRSP_EOF;
+        if (w < 0) {
+            if (errno == EPIPE || errno == ECONNRESET) return QRSP_EOF;
+            return -1;
+        }
         off += w;
     }
     return 0;
@@ -136,29 +144,44 @@ void qrsp_close(qrsp_conn_t *conn)
 int qrsp_send_packet(qrsp_conn_t *conn, const char *data, int len)
 {
     uint8_t csum = rsp_checksum(data, len);
+    int ret;
 
     char header[4];
     header[0] = '$';
     int hlen = 1;
 
     /* build $<data>#<c1><c2> */
-    if (send_raw(conn, header, hlen) < 0) return -1;
-    if (len > 0 && send_raw(conn, data, len) < 0) return -1;
+    ret = send_raw(conn, header, hlen);
+    if (ret < 0) return ret;
+    if (len > 0) {
+        ret = send_raw(conn, data, len);
+        if (ret < 0) return ret;
+    }
 
     char trailer[4];
     int tlen = snprintf(trailer, sizeof(trailer), "#%02x", csum);
-    if (send_raw(conn, trailer, tlen) < 0) return -1;
+    ret = send_raw(conn, trailer, tlen);
+    if (ret < 0) return ret;
 
     /* wait for ACK */
     int ack = recv_byte(conn);
     if (ack == '+') return 0;
+    if (ack == QRSP_EOF) return QRSP_EOF;
+    if (ack < 0) return -1;
     if (ack == '-') {
         /* one retry */
-        if (send_raw(conn, header, hlen) < 0) return -1;
-        if (len > 0 && send_raw(conn, data, len) < 0) return -1;
-        if (send_raw(conn, trailer, tlen) < 0) return -1;
+        ret = send_raw(conn, header, hlen);
+        if (ret < 0) return ret;
+        if (len > 0) {
+            ret = send_raw(conn, data, len);
+            if (ret < 0) return ret;
+        }
+        ret = send_raw(conn, trailer, tlen);
+        if (ret < 0) return ret;
         ack = recv_byte(conn);
         if (ack == '+') return 0;
+        if (ack == QRSP_EOF) return QRSP_EOF;
+        if (ack < 0) return -1;
     }
     fprintf(stderr, "qrsp: expected ACK(+), got 0x%02x\n", ack);
     return -1;
@@ -170,7 +193,7 @@ int qrsp_recv_packet(qrsp_conn_t *conn, char *buf, int buf_size)
     int c;
     for (;;) {
         c = recv_byte(conn);
-        if (c < 0) return -1;
+        if (c < 0) return c;
         if (c == '$') break;
         /* ignore inter-packet bytes (notifications, stray ACKs) */
     }
@@ -179,7 +202,7 @@ int qrsp_recv_packet(qrsp_conn_t *conn, char *buf, int buf_size)
     int pos = 0;
     for (;;) {
         c = recv_byte(conn);
-        if (c < 0) return -1;
+        if (c < 0) return c;
         if (c == '#') break;
         if (pos < buf_size - 1) {
             buf[pos++] = (char)c;
@@ -189,7 +212,8 @@ int qrsp_recv_packet(qrsp_conn_t *conn, char *buf, int buf_size)
 
     /* read 2-char checksum */
     char cs_hex[3] = {0, 0, 0};
-    if (recv_exact(conn, cs_hex, 2) < 0) return -1;
+    int ret = recv_exact(conn, cs_hex, 2);
+    if (ret < 0) return ret;
 
     uint8_t expected = rsp_checksum(buf, pos);
     uint8_t received = (uint8_t)((fromhex(cs_hex[0]) << 4) | fromhex(cs_hex[1]));
@@ -208,11 +232,12 @@ int qrsp_recv_packet(qrsp_conn_t *conn, char *buf, int buf_size)
 
 int qrsp_step(qrsp_conn_t *conn)
 {
-    if (qrsp_send_packet(conn, "s", 1) < 0) return -1;
+    int ret = qrsp_send_packet(conn, "s", 1);
+    if (ret < 0) return ret;
 
     char reply[256];
     int n = qrsp_recv_packet(conn, reply, sizeof(reply));
-    if (n < 0) return -1;
+    if (n < 0) return n;
 
     /* stop reply: Sxx or Txx... */
     if (reply[0] != 'S' && reply[0] != 'T') {
@@ -234,12 +259,13 @@ int qrsp_read_g_packet(qrsp_conn_t *conn, uint8_t *bin_buf, int buf_size)
         return -1;
     }
 
-    if (qrsp_send_packet(conn, "g", 1) < 0) return -1;
+    int ret = qrsp_send_packet(conn, "g", 1);
+    if (ret < 0) return ret;
 
     /* hex payload can be up to 560 chars for 35 regs */
     char hex[1024];
     int n = qrsp_recv_packet(conn, hex, sizeof(hex));
-    if (n < 0) return -1;
+    if (n < 0) return n;
 
     /* "EXX" = error, "x" = empty (unsupported) */
     if (n == 0 || hex[0] == 'E' || (n == 1 && hex[0] == 'x')) {
@@ -281,11 +307,12 @@ uint64_t qrsp_hex_decode_le64(const char *hex)
 
 int qrsp_continue(qrsp_conn_t *conn)
 {
-    if (qrsp_send_packet(conn, "c", 1) < 0) return -1;
+    int ret = qrsp_send_packet(conn, "c", 1);
+    if (ret < 0) return ret;
 
     char reply[256];
     int n = qrsp_recv_packet(conn, reply, sizeof(reply));
-    if (n < 0) return -1;
+    if (n < 0) return n;
 
     if (reply[0] != 'T' && reply[0] != 'S') {
         if (reply[0] == 'W' || reply[0] == 'X') {
@@ -302,11 +329,12 @@ int qrsp_set_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind)
 {
     char cmd[64];
     snprintf(cmd, sizeof(cmd), "Z%d,%lx,4", kind, addr);
-    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+    int ret = qrsp_send_packet(conn, cmd, strlen(cmd));
+    if (ret < 0) return ret;
 
     char reply[16];
     int n = qrsp_recv_packet(conn, reply, sizeof(reply));
-    if (n < 0) return -1;
+    if (n < 0) return n;
     if (strcmp(reply, "OK") != 0) {
         fprintf(stderr, "qrsp: set breakpoint failed: %s\n", reply);
         return -1;
@@ -318,11 +346,12 @@ int qrsp_remove_breakpoint(qrsp_conn_t *conn, uint64_t addr, int kind)
 {
     char cmd[64];
     snprintf(cmd, sizeof(cmd), "z%d,%lx,4", kind, addr);
-    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+    int ret = qrsp_send_packet(conn, cmd, strlen(cmd));
+    if (ret < 0) return ret;
 
     char reply[16];
     int n = qrsp_recv_packet(conn, reply, sizeof(reply));
-    if (n < 0) return -1;
+    if (n < 0) return n;
     if (strcmp(reply, "OK") != 0) {
         fprintf(stderr, "qrsp: remove breakpoint failed: %s\n", reply);
         return -1;
@@ -334,11 +363,12 @@ int qrsp_read_register(qrsp_conn_t *conn, int regnum, uint8_t *buf, int buf_size
 {
     char cmd[16];
     snprintf(cmd, sizeof(cmd), "p%x", regnum);
-    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+    int ret = qrsp_send_packet(conn, cmd, strlen(cmd));
+    if (ret < 0) return ret;
 
     char hex[128];
     int n = qrsp_recv_packet(conn, hex, sizeof(hex));
-    if (n < 0) return -1;
+    if (n < 0) return n;
 
     if (n == 0 || hex[0] == 'E') {
         fprintf(stderr, "qrsp: p%x returned error: %s\n", regnum, hex);
@@ -367,11 +397,12 @@ int qrsp_write_memory(qrsp_conn_t *conn, uint64_t addr, const uint8_t *buf, int 
     for (int i = 0; i < len; i++) {
         snprintf(hex + hlen + i * 2, 3, "%02x", buf[i]);
     }
-    if (qrsp_send_packet(conn, hex, hlen + len * 2) < 0) return -1;
+    int ret = qrsp_send_packet(conn, hex, hlen + len * 2);
+    if (ret < 0) return ret;
 
     char reply[16];
     int n = qrsp_recv_packet(conn, reply, sizeof(reply));
-    if (n < 0) return -1;
+    if (n < 0) return n;
     if (strcmp(reply, "OK") != 0) {
         fprintf(stderr, "qrsp: M%lx,%x failed: %s\n", addr, len, reply);
         return -1;
@@ -383,11 +414,12 @@ int qrsp_read_memory(qrsp_conn_t *conn, uint64_t addr, uint8_t *buf, int len)
 {
     char cmd[64];
     snprintf(cmd, sizeof(cmd), "m%lx,%x", addr, len);
-    if (qrsp_send_packet(conn, cmd, strlen(cmd)) < 0) return -1;
+    int ret = qrsp_send_packet(conn, cmd, strlen(cmd));
+    if (ret < 0) return ret;
 
     char hex[4096];
     int n = qrsp_recv_packet(conn, hex, sizeof(hex));
-    if (n < 0) return -1;
+    if (n < 0) return n;
 
     if (n == 0 || hex[0] == 'E') {
         fprintf(stderr, "qrsp: m%lx,%x returned error: %s\n", addr, len, hex);

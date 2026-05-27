@@ -1,12 +1,18 @@
 # Emu Instruction Execution Report
 
+<<<<<<< HEAD
 **Total instructions executed**: 1330895267  
 **Distinct executed**: 142 / 1690 static ISA  
+=======
+**Total instructions executed**: 20001  
+**Distinct executed**: 11 / 1690 static ISA  
+>>>>>>> 819bba7 (fix some bugs)
 
 ## Exceptions & Interrupts
 
 | Type | Count |
 |------|-------|
+<<<<<<< HEAD
 | IRQ (interrupts raised) | 811 |
 | TLB refill events | 0 |
 | Syscall count | 179 |
@@ -20,22 +26,36 @@
 | 2 | PIS (Page invalid - store) | 56 |
 | 3 | PIF (Page invalid - fetch) | 120 |
 | 11 | SYS (Syscall) | 179 |
+=======
+| IRQ (interrupts raised) | 0 |
+| TLB refill events | 0 |
+| Syscall count | 0 |
+| Exception entries (ecount) | 0 |
+
+*No exceptions triggered during execution.*
+>>>>>>> 819bba7 (fix some bugs)
 
 ## By Category
 
 | Category | Count | % |
 |----------|-------|----|
+<<<<<<< HEAD
 | Arithmetic/Shift (Ch3.1) | 669304826 | 50.29% |
 | Branch/Jump (Ch3.3) | 280186447 | 21.05% |
 | Load/Store (Ch3.4) | 361854455 | 27.19% |
 | Atomic (Ch3.5) | 2098790 | 0.16% |
 | Barrier (Ch3.6) | 8839309 | 0.66% |
 | Privileged (Ch6) | 8611440 | 0.65% |
+=======
+| Arithmetic/Shift (Ch3.1) | 18184 | 90.92% |
+| Branch/Jump (Ch3.3) | 1817 | 9.08% |
+>>>>>>> 819bba7 (fix some bugs)
 
 ## Executed Instructions
 
 | # | Instruction | Category | Count | % |
 |---|------------|----------|-------|----|
+<<<<<<< HEAD
 | 1 | `add_d` | Arithmetic/Shift (Ch3.1) | **63679699** | **4.78%** |
 | 2 | `add_w` | Arithmetic/Shift (Ch3.1) | **11122978** | **0.84%** |
 | 3 | `addi_d` | Arithmetic/Shift (Ch3.1) | **115848295** | **8.70%** |
@@ -180,6 +200,21 @@
 | 142 | `iocsrwr_w` | Privileged (Ch6) | **646** | **0.00%** |
 
 *142 distinct instructions executed.*
+=======
+| 1 | `add_w` | Arithmetic/Shift (Ch3.1) | **3636** | **18.18%** |
+| 2 | `addi_w` | Arithmetic/Shift (Ch3.1) | **3636** | **18.18%** |
+| 3 | `and` | Arithmetic/Shift (Ch3.1) | **1818** | **9.09%** |
+| 4 | `lu12i_w` | Arithmetic/Shift (Ch3.1) | **1** | **0.00%** |
+| 5 | `or` | Arithmetic/Shift (Ch3.1) | **1818** | **9.09%** |
+| 6 | `ori` | Arithmetic/Shift (Ch3.1) | **3** | **0.01%** |
+| 7 | `slli_w` | Arithmetic/Shift (Ch3.1) | **1818** | **9.09%** |
+| 8 | `srli_w` | Arithmetic/Shift (Ch3.1) | **1818** | **9.09%** |
+| 9 | `sub_w` | Arithmetic/Shift (Ch3.1) | **1818** | **9.09%** |
+| 10 | `xor` | Arithmetic/Shift (Ch3.1) | **1818** | **9.09%** |
+| 11 | `blt` | Branch/Jump (Ch3.3) | **1817** | **9.08%** |
+
+*11 distinct instructions executed.*
+>>>>>>> 819bba7 (fix some bugs)
 
 ## Complete ISA Reference
 
@@ -190,6 +225,7 @@
 
 | # | Instruction | Count |
 |---|------------|-------|
+<<<<<<< HEAD
 | 1 | `add_d` | **63679699** |
 | 2 | `add_w` | **11122978** |
 | 3 | `addi_d` | **115848295** |
@@ -201,6 +237,19 @@
 | 9 | `and` | **15899566** |
 | 10 | `andi` | **43552821** |
 | 11 | `andn` | **10995344** |
+=======
+| 1 | `add_d` | 0 |
+| 2 | `add_w` | **3636** |
+| 3 | `addi_d` | 0 |
+| 4 | `addi_w` | **3636** |
+| 5 | `addu16i_d` | 0 |
+| 6 | `alsl_d` | 0 |
+| 7 | `alsl_w` | 0 |
+| 8 | `alsl_wu` | 0 |
+| 9 | `and` | **1818** |
+| 10 | `andi` | 0 |
+| 11 | `andn` | 0 |
+>>>>>>> 819bba7 (fix some bugs)
 | 12 | `asrtgt_d` | 0 |
 | 13 | `asrtle_d` | 0 |
 | 14 | `bitrev_4b` | 0 |
@@ -231,6 +280,7 @@
 | 39 | `ctz_d` | **19039** |
 | 40 | `ctz_w` | **6562** |
 | 41 | `dbcl` | 0 |
+<<<<<<< HEAD
 | 42 | `div_d` | **2857** |
 | 43 | `div_du` | **2764** |
 | 44 | `div_w` | **41** |
@@ -244,6 +294,21 @@
 | 52 | `lu52i_d` | **6293976** |
 | 53 | `maskeqz` | **3694119** |
 | 54 | `masknez` | **3824161** |
+=======
+| 42 | `div_d` | 0 |
+| 43 | `div_du` | 0 |
+| 44 | `div_w` | 0 |
+| 45 | `div_wu` | 0 |
+| 46 | `ext_w_b` | 0 |
+| 47 | `ext_w_h` | 0 |
+| 48 | `ldptr_d` | 0 |
+| 49 | `ldptr_w` | 0 |
+| 50 | `lu12i_w` | **1** |
+| 51 | `lu32i_d` | 0 |
+| 52 | `lu52i_d` | 0 |
+| 53 | `maskeqz` | 0 |
+| 54 | `masknez` | 0 |
+>>>>>>> 819bba7 (fix some bugs)
 | 55 | `mod_d` | 0 |
 | 56 | `mod_du` | **428** |
 | 57 | `mod_w` | **576** |
@@ -265,6 +330,7 @@
 | 73 | `mulh_d` | 0 |
 | 74 | `mulh_du` | **5106631** |
 | 75 | `mulh_w` | 0 |
+<<<<<<< HEAD
 | 76 | `mulh_wu` | **921** |
 | 77 | `mulw_d_w` | **5** |
 | 78 | `mulw_d_wu` | **429** |
@@ -274,6 +340,17 @@
 | 82 | `orn` | **2368** |
 | 83 | `pcaddi` | **23234** |
 | 84 | `pcaddu12i` | **22766** |
+=======
+| 76 | `mulh_wu` | 0 |
+| 77 | `mulw_d_w` | 0 |
+| 78 | `mulw_d_wu` | 0 |
+| 79 | `nor` | 0 |
+| 80 | `or` | **1818** |
+| 81 | `ori` | **3** |
+| 82 | `orn` | 0 |
+| 83 | `pcaddi` | 0 |
+| 84 | `pcaddu12i` | 0 |
+>>>>>>> 819bba7 (fix some bugs)
 | 85 | `pcaddu18i` | 0 |
 | 86 | `pcalau12i` | **20951988** |
 | 87 | `rdtime_d` | **489456** |
@@ -287,6 +364,7 @@
 | 95 | `revh_d` | **68062** |
 | 96 | `rotr_d` | 0 |
 | 97 | `rotr_w` | 0 |
+<<<<<<< HEAD
 | 98 | `rotri_d` | **9391136** |
 | 99 | `rotri_w` | **4526324** |
 | 100 | `sll_d` | **13119790** |
@@ -312,6 +390,33 @@
 | 120 | `xori` | **137804** |
 
 *74/120 executed in this category.*
+=======
+| 98 | `rotri_d` | 0 |
+| 99 | `rotri_w` | 0 |
+| 100 | `sll_d` | 0 |
+| 101 | `sll_w` | 0 |
+| 102 | `slli_d` | 0 |
+| 103 | `slli_w` | **1818** |
+| 104 | `slt` | 0 |
+| 105 | `slti` | 0 |
+| 106 | `sltu` | 0 |
+| 107 | `sltui` | 0 |
+| 108 | `sra_d` | 0 |
+| 109 | `sra_w` | 0 |
+| 110 | `srai_d` | 0 |
+| 111 | `srai_w` | 0 |
+| 112 | `srl_d` | 0 |
+| 113 | `srl_w` | 0 |
+| 114 | `srli_d` | 0 |
+| 115 | `srli_w` | **1818** |
+| 116 | `sub_d` | 0 |
+| 117 | `sub_w` | **1818** |
+| 118 | `syscall` | 0 |
+| 119 | `xor` | **1818** |
+| 120 | `xori` | 0 |
+
+*10/120 executed in this category.*
+>>>>>>> 819bba7 (fix some bugs)
 
 ### Branch/Jump (Ch3.3)
 
@@ -320,6 +425,7 @@
 | 1 | `b` | **21071106** |
 | 2 | `bceqz` | 0 |
 | 3 | `bcnez` | 0 |
+<<<<<<< HEAD
 | 4 | `beq` | **7005500** |
 | 5 | `beqz` | **39859551** |
 | 6 | `bge` | **1991762** |
@@ -332,6 +438,20 @@
 | 13 | `jirl` | **24553786** |
 
 *11/13 executed in this category.*
+=======
+| 4 | `beq` | 0 |
+| 5 | `beqz` | 0 |
+| 6 | `bge` | 0 |
+| 7 | `bgeu` | 0 |
+| 8 | `bl` | 0 |
+| 9 | `blt` | **1817** |
+| 10 | `bltu` | 0 |
+| 11 | `bne` | 0 |
+| 12 | `bnez` | 0 |
+| 13 | `jirl` | 0 |
+
+*1/13 executed in this category.*
+>>>>>>> 819bba7 (fix some bugs)
 
 ### Load/Store (Ch3.4)
 

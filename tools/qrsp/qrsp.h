@@ -12,6 +12,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define QRSP_EOF (-2)
+
 #ifdef __cplusplus
 extern "C" {
 #endif

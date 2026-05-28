@@ -463,6 +463,9 @@ int diffnet_init(const char *host, int port, CPULoongArchState *env)
         if (strstr(env_val, "csr"))  diffnet_cmp_mask |= CMP_CSR;
         if (strstr(env_val, "mem"))  diffnet_cmp_mask |= CMP_MEM;
     }
+    if (g_reg_bytes == 4) {
+        diffnet_cmp_mask &= ~(CMP_FPR | CMP_LSX | CMP_LASX);
+    }
     fprintf(stderr, "DIFFNET: max_steps=%d batch_size=%d cmp=0x%02x\n",
             diffnet_max_steps, diffnet_batch_size, diffnet_cmp_mask);
 

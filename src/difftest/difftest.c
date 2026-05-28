@@ -18,6 +18,7 @@
 
 #define REF_TO_DUT 0
 #define DUT_TO_REF 1
+#define SWIFTCORE_PMEM_ALIAS_BASE 0x1c000000ULL
 
 extern char* ram;
 
@@ -27,12 +28,125 @@ extern int check_level;
 extern int exec_env(CPULoongArchState *env);
 extern void cpu_reset(CPUState* cs);
 extern uint64_t helper_read_csr(CPULoongArchState *env, int csr_index);
+void difftest_exec(uint64_t n);
 
 extern const char* const csrnames[];
+
+static size_t saved_ram_size = 0;
+static bool difftest_intr_era_override_valid = false;
+static uint64_t difftest_intr_era_override = 0;
+static bool difftest_intr_dbg_inited = false;
+static bool difftest_intr_dbg = false;
+
+typedef struct DifftestExecutionGuide {
+    bool force_raise_exception;
+    uint64_t exception_num;
+    uint64_t mtval;
+    uint64_t stval;
+    uint64_t mtval2;
+    uint64_t htval;
+    uint64_t vstval;
+    bool force_set_jump_target;
+    uint64_t jump_target;
+} DifftestExecutionGuide;
 
 static inline uint8_t* guest_to_host(uint64_t guest_paddr)
 {
     return (uint8_t*)(ram + guest_paddr);
+}
+
+static inline size_t ram_range_clip(uint64_t guest_paddr, size_t n)
+{
+    size_t ram_size_bytes = saved_ram_size;
+    if (ram_size_bytes == 0) {
+        ram_size_bytes = 8UL * 1024 * 1024 * 1024;
+    }
+    if (guest_paddr >= ram_size_bytes) {
+        return 0;
+    }
+    if (n > ram_size_bytes - guest_paddr) {
+        return ram_size_bytes - guest_paddr;
+    }
+    return n;
+}
+
+static inline bool swiftcore_alias_range(uint64_t addr, size_t n, uint64_t *alias)
+{
+    size_t ram_size_bytes = saved_ram_size;
+    if (ram_size_bytes == 0) {
+        ram_size_bytes = 8UL * 1024 * 1024 * 1024;
+    }
+    if (n == 0 || addr + n - 1 < addr) {
+        return false;
+    }
+    if (addr >= SWIFTCORE_PMEM_ALIAS_BASE) {
+        uint64_t low = addr - SWIFTCORE_PMEM_ALIAS_BASE;
+        if (low + n - 1 >= low && low + n <= ram_size_bytes) {
+            *alias = low;
+            return true;
+        }
+    } else if (addr + SWIFTCORE_PMEM_ALIAS_BASE + n - 1 >= addr + SWIFTCORE_PMEM_ALIAS_BASE &&
+               addr + SWIFTCORE_PMEM_ALIAS_BASE + n <= ram_size_bytes) {
+        *alias = addr + SWIFTCORE_PMEM_ALIAS_BASE;
+        return true;
+    }
+    return false;
+}
+
+static inline void sync_timer_from_tval(CPULoongArchState *env, uint64_t tval)
+{
+    env->CSR_TVAL = tval;
+    env->timer_counter = (int64_t)tval;
+}
+
+static inline uint64_t ref_timer_tval(CPULoongArchState *env)
+{
+    return (uint64_t)env->timer_counter;
+}
+
+static inline uint32_t pending_enabled_intr(CPULoongArchState *env)
+{
+    return FIELD_EX64(env->CSR_ESTAT, CSR_ESTAT, IS) &
+           FIELD_EX64(env->CSR_ECFG, CSR_ECFG, LIE);
+}
+
+static inline void set_difftest_intr_pending(CPULoongArchState *env, uint64_t intr_num)
+{
+    uint32_t vector = (intr_num < 13) ? (uint32_t)intr_num : IRQ_TIMER;
+    env->CSR_ESTAT |= (1ULL << vector);
+}
+
+static void difftest_enter_interrupt(CPULoongArchState *env)
+{
+    uint32_t vec_size = FIELD_EX64(env->CSR_ECFG, CSR_ECFG, VS);
+    uint32_t pending = pending_enabled_intr(env);
+    uint32_t vector = pending ? (31 - clz32(pending)) : IRQ_TIMER;
+
+    env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PPLV,
+                               FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV));
+    env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PIE,
+                               FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE));
+    env->CSR_ERA = difftest_intr_era_override_valid ?
+                   difftest_intr_era_override : env->pc;
+    difftest_intr_era_override_valid = false;
+    env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, 0);
+    env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE, 0);
+
+    if (vec_size) {
+        vec_size = (1 << vec_size) * 4;
+    }
+    env->irq_count++;
+    env->pc = env->CSR_EENTRY + (EXCCODE_EXTERNAL_INT + vector) * vec_size;
+    env_cpu(env)->exception_index = -1;
+}
+
+static bool difftest_intr_debug_enabled(void)
+{
+    if (!difftest_intr_dbg_inited) {
+        difftest_intr_dbg = getenv("SWIFTCORE_REF_INTR_DBG") != NULL;
+        difftest_intr_dbg_inited = true;
+    }
+    return difftest_intr_dbg;
 }
 
 // ── RAM and init ──
@@ -44,8 +158,6 @@ static void difftest_init_ram(size_t size)
         lsassert(ram != NULL);
     }
 }
-
-static size_t saved_ram_size = 0;
 
 bool addr_in_ram(hwaddr pa)
 {
@@ -90,6 +202,7 @@ void difftest_init(void)
     loongarch_core_initfn(env);
     cpu_clear_tc(env);
     env->timer_counter = INT64_MAX;
+    hw_ptw = true;
 
     current_env = env;
 
@@ -114,6 +227,56 @@ void difftest_exec(uint64_t n)
     exec_env(current_env);
 }
 
+static bool difftest_is_normal_page_exception(uint64_t exception)
+{
+    return exception >= EXCCODE_PIL && exception <= EXCCODE_PPI;
+}
+
+static void difftest_enter_exception(CPULoongArchState *env, uint64_t exception, uint64_t badv)
+{
+    uint32_t vec_size = FIELD_EX64(env->CSR_ECFG, CSR_ECFG, VS);
+
+    if (difftest_is_normal_page_exception(exception)) {
+        env->CSR_BADV = badv;
+        env->CSR_TLBEHI = badv & (TARGET_PAGE_MASK << 1);
+    }
+
+    env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ECODE, EXCODE_MCODE(exception));
+    env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ESUBCODE, EXCODE_SUBCODE(exception));
+    env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PPLV,
+                               FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV));
+    env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PIE,
+                               FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE));
+    env->CSR_ERA = env->pc;
+    env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, 0);
+    env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE, 0);
+
+    if (vec_size) {
+        vec_size = (1 << vec_size) * 4;
+    }
+    set_pc(env, env->CSR_EENTRY + EXCODE_MCODE(exception) * vec_size);
+    env_cpu(env)->exception_index = -1;
+}
+
+void difftest_guided_exec(void *guide_buf)
+{
+    DifftestExecutionGuide *guide = (DifftestExecutionGuide *)guide_buf;
+
+    if (guide->force_raise_exception) {
+        difftest_enter_exception(current_env, guide->exception_num, guide->mtval);
+        return;
+    }
+
+    if (guide->force_set_jump_target) {
+        difftest_intr_era_override_valid = true;
+        difftest_intr_era_override = guide->jump_target;
+        if (difftest_intr_debug_enabled()) {
+            fprintf(stderr, "[ref-guide] pc=%016lx era_override=%016lx\n",
+                    current_env->pc, difftest_intr_era_override);
+        }
+    }
+}
+
 static inline void difftest_cpy_helper(void* ref_buf, void* dut_buf, size_t n, bool direction)
 {
     if (direction == DUT_TO_REF) {
@@ -127,8 +290,18 @@ static inline void difftest_cpy_helper(void* ref_buf, void* dut_buf, size_t n, b
 
 void difftest_memcpy(uint64_t guest_paddr, void* dut_buf, size_t n, bool direction)
 {
-    void* ref_buf = (void*)guest_to_host(guest_paddr);
-    difftest_cpy_helper(ref_buf, dut_buf, n, direction);
+    if (direction == DUT_TO_REF) {
+        uint64_t alias = 0;
+        if (swiftcore_alias_range(guest_paddr, n, &alias)) {
+            memcpy(guest_to_host(alias), dut_buf, n);
+        }
+    }
+
+    size_t direct_n = ram_range_clip(guest_paddr, n);
+    if (direct_n != 0) {
+        void* ref_buf = (void*)guest_to_host(guest_paddr);
+        difftest_cpy_helper(ref_buf, dut_buf, direct_n, direction);
+    }
 }
 
 // ── difftest_regcpy: register state copy using la_ref_state_t ──
@@ -182,7 +355,7 @@ void difftest_regcpy(void* state, bool is_from_dut, bool is_fp)
         env->CSR_SAVE[7]  = s->csr.save7;
         env->CSR_TID      = s->csr.tid;
         env->CSR_TCFG     = s->csr.tcfg;
-        env->CSR_TVAL     = s->csr.tval;
+        sync_timer_from_tval(env, s->csr.tval);
         env->CSR_TICLR    = s->csr.ticlr;
         env->CSR_LLBCTL   = s->csr.llbctl;
         env->CSR_TLBRENTRY = s->csr.tlbrentry;
@@ -216,7 +389,7 @@ void difftest_regcpy(void* state, bool is_from_dut, bool is_fp)
         s->csr.save7      = env->CSR_SAVE[7];
         s->csr.tid        = env->CSR_TID;
         s->csr.tcfg       = env->CSR_TCFG;
-        s->csr.tval       = env->CSR_TVAL;
+        s->csr.tval       = ref_timer_tval(env);
         s->csr.ticlr      = env->CSR_TICLR;
         s->csr.llbctl     = env->CSR_LLBCTL;
         s->csr.tlbrentry  = env->CSR_TLBRENTRY;
@@ -260,7 +433,7 @@ void difftest_csrcpy(void* state, bool is_from_dut)
         env->CSR_SAVE[7]  = s->csr.save7;
         env->CSR_TID      = s->csr.tid;
         env->CSR_TCFG     = s->csr.tcfg;
-        env->CSR_TVAL     = s->csr.tval;
+        sync_timer_from_tval(env, s->csr.tval);
         env->CSR_TICLR    = s->csr.ticlr;
         env->CSR_LLBCTL   = s->csr.llbctl;
         env->CSR_TLBRENTRY = s->csr.tlbrentry;
@@ -294,7 +467,7 @@ void difftest_csrcpy(void* state, bool is_from_dut)
         s->csr.save7      = env->CSR_SAVE[7];
         s->csr.tid        = env->CSR_TID;
         s->csr.tcfg       = env->CSR_TCFG;
-        s->csr.tval       = env->CSR_TVAL;
+        s->csr.tval       = ref_timer_tval(env);
         s->csr.ticlr      = env->CSR_TICLR;
         s->csr.llbctl     = env->CSR_LLBCTL;
         s->csr.tlbrentry  = env->CSR_TLBRENTRY;
@@ -349,8 +522,15 @@ int difftest_store_commit(uint64_t* addr, uint64_t* data, uint8_t* mask)
 void difftest_raise_intr(uint64_t intr_num)
 {
     CPULoongArchState* env = current_env;
-    env->CSR_ESTAT |= (1ULL << (intr_num & 0xf));
-    loongarch_cpu_check_irq(env);
+
+    if (difftest_intr_debug_enabled()) {
+        fprintf(stderr, "[ref-raise] pc=%016lx intr=%lu override_valid=%d override=%016lx estat=%016lx crmd=%016lx tval=%016lx\n",
+                env->pc, intr_num, difftest_intr_era_override_valid,
+                difftest_intr_era_override, env->CSR_ESTAT, env->CSR_CRMD,
+                (uint64_t)env->timer_counter);
+    }
+    set_difftest_intr_pending(env, intr_num);
+    difftest_enter_interrupt(env);
 }
 
 // ── Fine-grained helpers ──
@@ -496,6 +676,9 @@ void difftest_csrcpy_idx(int csr_idx, uint64_t* dut_buf, uint64_t mask, bool dir
     }
 
     *csr_base_addr = (*csr_base_addr & ~mask) | (*dut_buf & mask);
+    if (csr_idx == LOONGARCH_CSR_TVAL) {
+        current_env->timer_counter = (int64_t)current_env->CSR_TVAL;
+    }
 }
 
 /* TODO: implement TLB copy for differential testing */

@@ -452,6 +452,39 @@ void loongarch_openc910_initfn(CPULoongArchState* env) {
     fprintf(stderr, "warn:auto set ptw_hw_setVD=0\n");
 }
 
+void loongarch_swiftcore_initfn(CPULoongArchState* env) {
+    int i;
+
+    for (i = 0; i < 21; i++) {
+        env->cpucfg[i] = 0x0;
+    }
+
+    env->cpucfg[0] = 0x0014c010;
+    env->cpucfg[1] = 0x07f2f27e;
+    env->cpucfg[2] = 0x0140c80f;
+    env->cpucfg[3] = 0x000008fe;
+    env->cpucfg[4] = 0x05f5e100;
+    env->cpucfg[5] = 0x00010001;
+    env->cpucfg[16] = 0x00000875;
+    env->cpucfg[17] = 0x06080007;
+    env->cpucfg[18] = 0x06080007;
+
+    env->CSR_ASID = FIELD_DP64(0, CSR_ASID, ASIDBITS, 0xa);
+    env->CSR_PRCFG1 = FIELD_DP64(0, CSR_PRCFG1, SAVE_NUM, 15);
+    env->CSR_PRCFG1 = FIELD_DP64(env->CSR_PRCFG1, CSR_PRCFG1, TIMER_BITS, 63);
+    env->CSR_PRCFG1 = FIELD_DP64(env->CSR_PRCFG1, CSR_PRCFG1, VSMAX, 4);
+    env->CSR_PRCFG2 = 0x1000;
+    env->CSR_PRCFG3 = FIELD_DP64(0, CSR_PRCFG3, TLB_TYPE, 1);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, MTLB_ENTRY, 63);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_WAYS, 0);
+    env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_SETS, 6);
+    env->CSR_PWCL = 0x0000000c;
+    env->CSR_PWCH = 0x00000000;
+    env->CSR_STLBPS = 0x0000000c;
+
+    ptw_hw_setVD = 0;
+}
+
 void loongarch_la32r_initfn(CPULoongArchState* env)
 {
     int i;

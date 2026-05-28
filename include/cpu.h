@@ -741,6 +741,7 @@ static inline void cpu_clear_tc(CPULoongArchState *env) {
     memset(env->tc_load, -1, sizeof(env->tc_load));
     memset(env->tc_store, -1, sizeof(env->tc_store));
     memset(env->tc_fetch, -1, sizeof(env->tc_fetch));
+    memset(env->inscache, -1, sizeof(env->inscache));
 }
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
@@ -828,6 +829,7 @@ bool loongarch_cpu_has_irq(CPULoongArchState *env);
 void loongarch_la464_initfn(CPULoongArchState* env);
 void loongarch_centaur320_initfn(CPULoongArchState* env);
 void loongarch_openc910_initfn(CPULoongArchState* env);
+void loongarch_swiftcore_initfn(CPULoongArchState* env);
 void loongarch_la32r_initfn(CPULoongArchState* env);
 void loongarch_la32s_initfn(CPULoongArchState* env);
 

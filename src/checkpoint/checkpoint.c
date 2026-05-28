@@ -27,6 +27,7 @@ extern char* ram;
 
 static void loongarch_cpu_dump_state(CPULoongArchState *env, FILE *f);
 static void loongarch_cpu_restore_state(CPULoongArchState *env, FILE *f);
+extern void save_difftest_emu_checkpoint(CPULoongArchState *env, const char *filename);
 extern uint64_t helper_read_csr(CPULoongArchState *env, int csr_index);
 extern uint64_t helper_csrrd_pgd(CPULoongArchState*);
 
@@ -132,6 +133,8 @@ void save_checkpoint(CPULoongArchState *env, char* name)
     loongarch_cpu_dump_state(env, f);
     fclose(f);
 
+    sprintf(filename, "%s_icount_%ld/difftest_emu_gcpt.bin", name, env->icount);
+    save_difftest_emu_checkpoint(env, filename);
 }
 
 void restore_checkpoint(CPULoongArchState *env, char* image_dir)
@@ -529,6 +532,17 @@ void checkpoint_context(CPULoongArchState *env) {
     unsigned long fwcount = 0;
     
     if (emu_cpu_check_point) {
+        if (getenv("LAEMU_DIFFTEST_GCPT_ONLY")) {
+            const char *gcpt_name = getenv("LAEMU_DIFFTEST_GCPT_NAME");
+            if (!gcpt_name || !gcpt_name[0]) {
+                gcpt_name = "difftest_emu_gcpt.bin";
+            }
+            save_difftest_emu_checkpoint(env, gcpt_name);
+            if (getenv("LAEMU_EXIT_AFTER_GCPT")) {
+                laemu_exit(0);
+            }
+            return;
+        }
         // 1. Save Current States.
         CKP_CSR_FP = fopen("checkpoint_csr.bin", "w");
         if (!CKP_CSR_FP) {
@@ -557,6 +571,7 @@ void checkpoint_context(CPULoongArchState *env) {
         fwcount = fwrite(ram, 1, CKP_RAM_SIZE, CKP_FP);
         if (fwcount == CKP_RAM_SIZE) {
             printf("\033[1m\033[33mCheckPoint has successfully saved into file!\n");
+            save_difftest_emu_checkpoint(env, "difftest_emu_gcpt.bin");
             // while (1);
             // exit(0);
         } else {

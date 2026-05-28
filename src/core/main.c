@@ -210,6 +210,7 @@ void usage(void) {
     fprintf(stderr, "-g Enable gdbserver\n");
     fprintf(stderr, "--smp n       Number of virtual CPUs\n");
     fprintf(stderr, "-w Force enable hardware page table walker\n");
+    fprintf(stderr, "-A arch       CPU model: la464, loongarch64, openc910, swiftcore\n");
     fprintf(stderr, "-N host:port  Enable network difftest against QEMU GDB stub\n");
     fprintf(stderr, "-R file       Instruction stats report (default: report_instruction.md)\n");
     laemu_exit(EXIT_SUCCESS);
@@ -872,10 +873,8 @@ int exec_env(CPULoongArchState *env) {
                 }
 #endif
 
-#if !defined (CONFIG_USER_ONLY)
-#if !defined (CONFIG_DIFF)
+#if !defined (CONFIG_USER_ONLY) && !defined (CONFIG_DIFF)
                 loongarch_cpu_check_irq(env);
-#endif
                 if (unlikely(loongarch_cpu_has_irq(env))) {
                     cs->exception_index = EXCCODE_INT;
                     loongarch_cpu_do_interrupt(cs);
@@ -1167,10 +1166,36 @@ void handle_checkmask(const char* str) {
 }
 
 #if !defined(CONFIG_USER_ONLY)
+#if defined(CONFIG_DIFF)
+static inline bool is_swiftcore_uart(hwaddr ha)
+{
+    return ((ha & ~0xfULL) == 0x1FE00000ULL) ||
+           ((ha & ~0xfULL) == 0x1FF10000ULL);
+}
+
+static uint64_t swiftcore_uart_ld(hwaddr ha, int size)
+{
+    uint64_t data = 0;
+
+    for (int i = 0; i < size; i++) {
+        if (((ha + i) & 0xfULL) == 5) {
+            data |= 0x60ULL << (i * 8);
+        }
+    }
+
+    return data;
+}
+#endif
+
 void do_io_st(hwaddr ha, uint64_t data, int size) {
     switch (ha)
     {
     case 0x1FF10000 ... 0x1FF11000:
+#if defined(CONFIG_DIFF)
+        if (is_swiftcore_uart(ha)) {
+            break;
+        }
+#endif
         if (serial_plus) {
             serial_plus_ioport_write(ss, ha, data, size);
         } else {
@@ -1178,6 +1203,11 @@ void do_io_st(hwaddr ha, uint64_t data, int size) {
         }
         break;
     case 0x1FE00000 ... 0x1FE01000:
+#if defined(CONFIG_DIFF)
+        if (is_swiftcore_uart(ha)) {
+            break;
+        }
+#endif
         if (serial_plus) {
             serial_plus_ioport_write(ss, ha, data, size);
         } else {
@@ -1212,6 +1242,12 @@ uint64_t do_io_ld(hwaddr ha, int size) {
     switch (ha)
     {
     case 0x1FF10000 ... 0x1FF11000:
+#if defined(CONFIG_DIFF)
+        if (is_swiftcore_uart(ha)) {
+            data = swiftcore_uart_ld(ha, size);
+            break;
+        }
+#endif
         if (serial_plus) {
             data = serial_plus_ioport_read(ss, ha, size);
         } else {
@@ -1219,6 +1255,12 @@ uint64_t do_io_ld(hwaddr ha, int size) {
         }
         break;
     case 0x1FE00000 ... 0x1FE01000:
+#if defined(CONFIG_DIFF)
+        if (is_swiftcore_uart(ha)) {
+            data = swiftcore_uart_ld(ha, size);
+            break;
+        }
+#endif
         if (serial_plus) {
             data = serial_plus_ioport_read(ss, ha, size);
         } else {
@@ -1505,6 +1547,7 @@ int main(int argc, char** argv, char **envp) {
             else if (strcmp(arch_name, "la464") == 0 ||
                      strcmp(arch_name, "loongarch64") == 0) loongarch_la464_initfn(cpu_env);
             else if (strcmp(arch_name, "openc910") == 0) loongarch_openc910_initfn(cpu_env);
+            else if (strcmp(arch_name, "swiftcore") == 0) loongarch_swiftcore_initfn(cpu_env);
             else {
                 fprintf(stderr, "Unknown arch: %s\n", arch_name);
                 loongarch_core_initfn(cpu_env);

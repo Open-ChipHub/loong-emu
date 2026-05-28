@@ -802,7 +802,7 @@ static hwaddr store_pa(CPULoongArchState *env, uint64_t addr) {
     }
     return ha;
 }
-#if defined(CONFIG_USER_ONLY) || defined(CONFIG_DIFF)
+#if defined(CONFIG_USER_ONLY)
 #define is_io(...) false
 #else
 // exclude 32MB bios
@@ -1256,13 +1256,6 @@ static bool trans_ll_w(CPULoongArchState *env, arg_ll_w *restrict a) {
 }
 static bool trans_sc_w(CPULoongArchState *env, arg_sc_w *restrict a) {
     hwaddr ha = store_pa(env, env->gpr[a->rj] + a->imm);
-#ifdef CONFIG_DIFF
-    // In difftest mode with shared RAM, the DUT's SC has already committed
-    // (modifying RAM and setting rd). The REF should trust the DUT's result
-    // rather than re-checking against shared RAM which has been altered.
-    // The rd value was synced from DUT via difftest_regcpy before this instr.
-    (void)ha;
-#else
     if (FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
         env->lladdr == ha && env->llval == ram_ldw(ha)) {
         ram_stw(ha, env->gpr[a->rd]);
@@ -1270,7 +1263,7 @@ static bool trans_sc_w(CPULoongArchState *env, arg_sc_w *restrict a) {
     } else {
         env->gpr[a->rd] = 0;
     }
-#endif
+    env->CSR_LLBCTL = FIELD_DP64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB, 0);
     env->pc += 4;
     return true;
 }
@@ -1285,10 +1278,6 @@ static bool trans_ll_d(CPULoongArchState *env, arg_ll_d *restrict a) {
 }
 static bool trans_sc_d(CPULoongArchState *env, arg_sc_d *restrict a) {
     hwaddr ha = store_pa(env, env->gpr[a->rj] + a->imm);
-#ifdef CONFIG_DIFF
-    // In difftest mode, trust DUT's SC result synced via difftest_regcpy
-    (void)ha;
-#else
     if (FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
         env->lladdr == ha && env->llval == ram_ldd(ha)) {
         ram_std(ha, env->gpr[a->rd]);
@@ -1296,7 +1285,7 @@ static bool trans_sc_d(CPULoongArchState *env, arg_sc_d *restrict a) {
     } else {
         env->gpr[a->rd] = 0;
     }
-#endif
+    env->CSR_LLBCTL = FIELD_DP64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB, 0);
     env->pc += 4;
     return true;
 }
@@ -2096,7 +2085,7 @@ static bool trans_fstle_d(CPULoongArchState *env, arg_fstle_d *restrict a) {
 }
 static bool trans_beqz(CPULoongArchState *env, arg_beqz *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((int64_t)env->gpr[a->rj] == 0) {
+    if ((is_la64(env) ? env->gpr[a->rj] : (uint32_t)env->gpr[a->rj]) == 0) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2105,7 +2094,7 @@ static bool trans_beqz(CPULoongArchState *env, arg_beqz *restrict a) {
 }
 static bool trans_bnez(CPULoongArchState *env, arg_bnez *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((int64_t)env->gpr[a->rj] != 0) {
+    if ((is_la64(env) ? env->gpr[a->rj] : (uint32_t)env->gpr[a->rj]) != 0) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2157,7 +2146,8 @@ static bool trans_bl(CPULoongArchState *env, arg_bl *restrict a) {
 }
 static bool trans_beq(CPULoongArchState *env, arg_beq *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((int64_t)env->gpr[a->rj] == (int64_t)env->gpr[a->rd]) {
+    if (is_la64(env) ? (env->gpr[a->rj] == env->gpr[a->rd])
+                     : ((uint32_t)env->gpr[a->rj] == (uint32_t)env->gpr[a->rd])) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2166,7 +2156,8 @@ static bool trans_beq(CPULoongArchState *env, arg_beq *restrict a) {
 }
 static bool trans_bne(CPULoongArchState *env, arg_bne *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((int64_t)env->gpr[a->rj] != (int64_t)env->gpr[a->rd]) {
+    if (is_la64(env) ? (env->gpr[a->rj] != env->gpr[a->rd])
+                     : ((uint32_t)env->gpr[a->rj] != (uint32_t)env->gpr[a->rd])) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2175,7 +2166,8 @@ static bool trans_bne(CPULoongArchState *env, arg_bne *restrict a) {
 }
 static bool trans_blt(CPULoongArchState *env, arg_blt *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((int64_t)env->gpr[a->rj] < (int64_t)env->gpr[a->rd]) {
+    if (is_la64(env) ? ((int64_t)env->gpr[a->rj] < (int64_t)env->gpr[a->rd])
+                     : ((int32_t)env->gpr[a->rj] < (int32_t)env->gpr[a->rd])) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2184,7 +2176,8 @@ static bool trans_blt(CPULoongArchState *env, arg_blt *restrict a) {
 }
 static bool trans_bge(CPULoongArchState *env, arg_bge *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((int64_t)env->gpr[a->rj] >= (int64_t)env->gpr[a->rd]) {
+    if (is_la64(env) ? ((int64_t)env->gpr[a->rj] >= (int64_t)env->gpr[a->rd])
+                     : ((int32_t)env->gpr[a->rj] >= (int32_t)env->gpr[a->rd])) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2193,7 +2186,8 @@ static bool trans_bge(CPULoongArchState *env, arg_bge *restrict a) {
 }
 static bool trans_bltu(CPULoongArchState *env, arg_bltu *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((uint64_t)env->gpr[a->rj] < (uint64_t)env->gpr[a->rd]) {
+    if (is_la64(env) ? ((uint64_t)env->gpr[a->rj] < (uint64_t)env->gpr[a->rd])
+                     : ((uint32_t)env->gpr[a->rj] < (uint32_t)env->gpr[a->rd])) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2202,7 +2196,8 @@ static bool trans_bltu(CPULoongArchState *env, arg_bltu *restrict a) {
 }
 static bool trans_bgeu(CPULoongArchState *env, arg_bgeu *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
-    if ((uint64_t)env->gpr[a->rj] >= (uint64_t)env->gpr[a->rd]) {
+    if (is_la64(env) ? ((uint64_t)env->gpr[a->rj] >= (uint64_t)env->gpr[a->rd])
+                     : ((uint32_t)env->gpr[a->rj] >= (uint32_t)env->gpr[a->rd])) {
         env->pc += a->offs;
     } else {
         env->pc += 4;
@@ -2276,6 +2271,14 @@ uint64_t helper_read_csr(CPULoongArchState *env, int csr_index) {
         case LOONGARCH_CSR_SAVE(5)        :old_v = env->CSR_SAVE[5]; break;
         case LOONGARCH_CSR_SAVE(6)        :old_v = env->CSR_SAVE[6]; break;
         case LOONGARCH_CSR_SAVE(7)        :old_v = env->CSR_SAVE[7]; break;
+        case LOONGARCH_CSR_SAVE(8)        :old_v = env->CSR_SAVE[8]; break;
+        case LOONGARCH_CSR_SAVE(9)        :old_v = env->CSR_SAVE[9]; break;
+        case LOONGARCH_CSR_SAVE(10)       :old_v = env->CSR_SAVE[10]; break;
+        case LOONGARCH_CSR_SAVE(11)       :old_v = env->CSR_SAVE[11]; break;
+        case LOONGARCH_CSR_SAVE(12)       :old_v = env->CSR_SAVE[12]; break;
+        case LOONGARCH_CSR_SAVE(13)       :old_v = env->CSR_SAVE[13]; break;
+        case LOONGARCH_CSR_SAVE(14)       :old_v = env->CSR_SAVE[14]; break;
+        case LOONGARCH_CSR_SAVE(15)       :old_v = env->CSR_SAVE[15]; break;
         case LOONGARCH_CSR_TID            :old_v = sextract64(env->CSR_TID, 0, 32); break;
         case LOONGARCH_CSR_TCFG           :old_v = env->CSR_TCFG; break;
         case LOONGARCH_CSR_TVAL           :old_v = env->timer_counter; break;
@@ -2376,6 +2379,14 @@ uint64_t helper_write_csr(CPULoongArchState *env, int csr_index, uint64_t new_v,
         case LOONGARCH_CSR_SAVE(5)        :old_v = env->CSR_SAVE[5]; env->CSR_SAVE[5] = mask_write(env->CSR_SAVE[5], new_v, mask); break;
         case LOONGARCH_CSR_SAVE(6)        :old_v = env->CSR_SAVE[6]; env->CSR_SAVE[6] = mask_write(env->CSR_SAVE[6], new_v, mask); break;
         case LOONGARCH_CSR_SAVE(7)        :old_v = env->CSR_SAVE[7]; env->CSR_SAVE[7] = mask_write(env->CSR_SAVE[7], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(8)        :old_v = env->CSR_SAVE[8]; env->CSR_SAVE[8] = mask_write(env->CSR_SAVE[8], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(9)        :old_v = env->CSR_SAVE[9]; env->CSR_SAVE[9] = mask_write(env->CSR_SAVE[9], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(10)       :old_v = env->CSR_SAVE[10]; env->CSR_SAVE[10] = mask_write(env->CSR_SAVE[10], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(11)       :old_v = env->CSR_SAVE[11]; env->CSR_SAVE[11] = mask_write(env->CSR_SAVE[11], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(12)       :old_v = env->CSR_SAVE[12]; env->CSR_SAVE[12] = mask_write(env->CSR_SAVE[12], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(13)       :old_v = env->CSR_SAVE[13]; env->CSR_SAVE[13] = mask_write(env->CSR_SAVE[13], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(14)       :old_v = env->CSR_SAVE[14]; env->CSR_SAVE[14] = mask_write(env->CSR_SAVE[14], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(15)       :old_v = env->CSR_SAVE[15]; env->CSR_SAVE[15] = mask_write(env->CSR_SAVE[15], new_v, mask); break;
         case LOONGARCH_CSR_TID            :old_v = sextract64(env->CSR_TID, 0, 32); env->CSR_TID = mask_write(env->CSR_TID, new_v, mask & LOONGARCH_CSR_TID_WMASK); break;
         case LOONGARCH_CSR_TCFG           :old_v = env->CSR_TCFG; env->CSR_TCFG = mask_write(env->CSR_TCFG, new_v, mask);
 #ifndef CONFIG_DIFF

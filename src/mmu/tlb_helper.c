@@ -594,7 +594,19 @@ int probe_get_physical_address(CPULoongArchState *env, hwaddr *physical,
 void helper_ertn(CPULoongArchState *env)
 {
     uint64_t csr_pplv, csr_pie;
-    if (FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR)) {
+    if (FIELD_EX64(env->CSR_MERRCTL, CSR_MERRCTL, ISMERR)) {
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, (env->CSR_MERRCTL >> 2) & 0x3);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE,  (env->CSR_MERRCTL >> 4) & 0x1);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, DA,  (env->CSR_MERRCTL >> 7) & 0x1);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PG,  (env->CSR_MERRCTL >> 8) & 0x1);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, DATF, (env->CSR_MERRCTL >> 9) & 0x3);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, DATM, (env->CSR_MERRCTL >> 11) & 0x3);
+        env->CSR_MERRCTL = FIELD_DP64(env->CSR_MERRCTL, CSR_MERRCTL, ISMERR, 0);
+        set_pc(env, env->CSR_MERRERA);
+        qemu_log_mask(CPU_LOG_INT, "%s: MERRERA " TARGET_FMT_lx "\n",
+                      __func__, env->CSR_MERRERA);
+        return;
+    } else if (FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR)) {
         csr_pplv = FIELD_EX64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PPLV);
         csr_pie = FIELD_EX64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PIE);
 

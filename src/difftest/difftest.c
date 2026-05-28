@@ -213,10 +213,24 @@ void difftest_init(void)
 
 void difftest_init_v2(unsigned state_size)
 {
-    (void)state_size;
+    if (state_size != sizeof(la_ref_state_t)) {
+        fprintf(stderr, "ERROR: loong64-emu REF state size mismatch: REF=%zuB DUT=%uB\n",
+                sizeof(la_ref_state_t), state_size);
+        abort();
+    }
+
     if (ram == NULL) {
         difftest_init();
     }
+}
+
+int difftest_status(void)
+{
+    return 0;
+}
+
+void difftest_close(void)
+{
 }
 
 // ── Execution ──
@@ -302,6 +316,11 @@ void difftest_memcpy(uint64_t guest_paddr, void* dut_buf, size_t n, bool directi
         void* ref_buf = (void*)guest_to_host(guest_paddr);
         difftest_cpy_helper(ref_buf, dut_buf, direct_n, direction);
     }
+}
+
+void difftest_memcpy_init(uint64_t guest_paddr, void* dut_buf, size_t n, bool direction)
+{
+    difftest_memcpy(guest_paddr, dut_buf, n, direction);
 }
 
 // ── difftest_regcpy: register state copy using la_ref_state_t ──
@@ -681,8 +700,20 @@ void difftest_csrcpy_idx(int csr_idx, uint64_t* dut_buf, uint64_t mask, bool dir
     }
 }
 
-/* TODO: implement TLB copy for differential testing */
-void difftest_tlbcpy()
+void difftest_tlbcpy(void *state, bool direction)
 {
-    // TODO
+    la_tlb_state_t *tlb_state = (la_tlb_state_t *)state;
+
+    _Static_assert(LA_DIFFTEST_TLB_ENTRIES == LOONGARCH_TLB_MAX,
+                   "LoongArch DiffTest TLB entry count mismatch");
+    _Static_assert(sizeof(la_tlb_entry_t) == sizeof(LoongArchTLB),
+                   "LoongArch DiffTest TLB entry size mismatch");
+
+    lsassert(tlb_state != NULL);
+    difftest_cpy_helper(current_env->tlb, tlb_state->entry,
+                        sizeof(current_env->tlb), direction);
+
+    if (direction == DUT_TO_REF) {
+        cpu_clear_tc(current_env);
+    }
 }

@@ -22,8 +22,8 @@ typedef struct {
 // Must match the RTL probe DifftestCSRRegState in difftest.v
 // Fields: crmd, prmd, euen, ecfg, estat, era, badv, eentry,
 //         tlbidx, tlbehi, tlbelo0, tlbelo1, asid, pgdl, pgdh,
-//         save0, save1, save2, save3, tid, tcfg, tval, ticlr,
-//         llbctl, tlbrentry, dmw0, dmw1
+//         save0..save7, tid, tcfg, tval, ticlr, llbctl,
+//         tlbrentry, dmw0..dmw3
 typedef struct __attribute__((packed)) {
     uint64_t crmd;
     uint64_t prmd;
@@ -67,6 +67,20 @@ typedef struct __attribute__((packed)) {
     la_csr_state_t    csr;
     uint64_t          pc;
 } la_ref_state_t;
+
+#define LA_DIFFTEST_STLB_ENTRIES 2048
+#define LA_DIFFTEST_MTLB_ENTRIES 64
+#define LA_DIFFTEST_TLB_ENTRIES  (LA_DIFFTEST_STLB_ENTRIES + LA_DIFFTEST_MTLB_ENTRIES)
+
+typedef struct __attribute__((packed)) {
+    uint64_t tlb_misc;
+    uint64_t tlb_entry0;
+    uint64_t tlb_entry1;
+} la_tlb_entry_t;
+
+typedef struct __attribute__((packed)) {
+    la_tlb_entry_t entry[LA_DIFFTEST_TLB_ENTRIES];
+} la_tlb_state_t;
 
 #ifdef __cplusplus
 }

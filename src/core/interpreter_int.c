@@ -1899,6 +1899,7 @@ uint64_t helper_write_csr(CPULoongArchState *env, int csr_index, uint64_t new_v,
         case LOONGARCH_CSR_DBG            :old_v = env->CSR_DBG; break;
         case LOONGARCH_CSR_DERA           :old_v = env->CSR_DERA; env->CSR_DERA = mask_write(env->CSR_DERA, new_v, mask); break;
         case LOONGARCH_CSR_DSAVE          :old_v = env->CSR_DSAVE; env->CSR_DSAVE = mask_write(env->CSR_DSAVE, new_v, mask); break;
+        case 0x132                        :old_v = 0; break;
         default:
             fprintf(stderr, "NOT IMPLEMENTED %s %x\n", __func__, csr_index);
     }

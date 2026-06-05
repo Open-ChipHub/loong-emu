@@ -304,7 +304,7 @@ static inline void difftest_cpy_helper(void* ref_buf, void* dut_buf, size_t n, b
 
 void difftest_memcpy(uint64_t guest_paddr, void* dut_buf, size_t n, bool direction)
 {
-    if (direction == DUT_TO_REF) {
+    if (direction == DUT_TO_REF && guest_paddr >= SWIFTCORE_PMEM_ALIAS_BASE) {
         uint64_t alias = 0;
         if (swiftcore_alias_range(guest_paddr, n, &alias)) {
             memcpy(guest_to_host(alias), dut_buf, n);

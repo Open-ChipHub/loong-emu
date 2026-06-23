@@ -87,6 +87,7 @@ void helper_iocsrwr_w(CPULoongArchState*, target_ulong, target_ulong);
 void helper_iocsrwr_d(CPULoongArchState*, target_ulong, target_ulong);
 void helper_tlbwr(CPULoongArchState*);
 void helper_tlbfill(CPULoongArchState*);
+void helper_set_tlbfill_index(int index);
 void helper_tlbsrch(CPULoongArchState*);
 void helper_tlbrd(CPULoongArchState*);
 void helper_tlbclr(CPULoongArchState*);

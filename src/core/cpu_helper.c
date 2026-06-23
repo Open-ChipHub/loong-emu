@@ -18,7 +18,7 @@ static int loongarch_map_tlb_entry(CPULoongArchState *env, hwaddr *physical,
     LoongArchTLB *tlb = &env->tlb[index];
     uint64_t plv = mmu_idx;
     uint64_t tlb_entry, tlb_ppn;
-    uint8_t tlb_ps, n, tlb_v, tlb_d, tlb_w, tlb_plv, tlb_nx, tlb_nr, tlb_rplv;
+    uint8_t tlb_ps, n, tlb_p, tlb_v, tlb_d, tlb_w, tlb_plv, tlb_nx, tlb_nr, tlb_rplv;
 
     if (index >= LOONGARCH_STLB) {
         tlb_ps = FIELD_EX64(tlb->tlb_misc, TLB_MISC, PS);
@@ -28,6 +28,7 @@ static int loongarch_map_tlb_entry(CPULoongArchState *env, hwaddr *physical,
     n = (address >> tlb_ps) & 0x1;/* Odd or even */
 
     tlb_entry = n ? tlb->tlb_entry1 : tlb->tlb_entry0;
+    tlb_p = FIELD_EX64(tlb_entry, TLBENTRY, P);
     tlb_v = FIELD_EX64(tlb_entry, TLBENTRY, V);
     tlb_d = FIELD_EX64(tlb_entry, TLBENTRY, D);
     tlb_w = FIELD_EX64(tlb_entry, TLBENTRY, W);
@@ -47,8 +48,12 @@ static int loongarch_map_tlb_entry(CPULoongArchState *env, hwaddr *physical,
     /* Remove sw bit between bit12 -- bit PS*/
     tlb_ppn = tlb_ppn & ~(((0x1UL << (tlb_ps - 12)) -1));
 
-    /* Check hw_ptw related issue */
-    if (enable_hw_ptw(env) && ptw_hw_setVD && access_type == MMU_DATA_STORE && tlb_w && !tlb_d) {
+    /* Check hw_ptw related issue. LA32R has no P/W bits in TLBELO. */
+    if (!is_la32r(env) && enable_hw_ptw(env) && tlb_p && !tlb_v) {
+        return TLBRET_PTW_SET_D;
+    }
+    if (!is_la32r(env) && enable_hw_ptw(env) && ptw_hw_setVD &&
+        access_type == MMU_DATA_STORE && tlb_w && !tlb_d) {
         return TLBRET_PTW_SET_D;
     }
 
@@ -111,6 +116,26 @@ bool loongarch_tlb_search(CPULoongArchState *env, target_ulong vaddr,
     bool hit_stlb = false;
     bool hit_mtlb = false;
 
+    if (is_la32r(env)) {
+        vpn = (vaddr & TARGET_VIRT_MASK) >> (stlb_ps + 1);
+        for (i = 0; i < 16; ++i) {
+            tlb = &env->tlb[i];
+            tlb_e = FIELD_EX64(tlb->tlb_misc, TLB_MISC, E);
+            if (tlb_e) {
+                tlb_vppn = FIELD_EX64(tlb->tlb_misc, TLB_MISC, VPPN);
+                tlb_asid = FIELD_EX64(tlb->tlb_misc, TLB_MISC, ASID);
+                tlb_g = FIELD_EX64(tlb->tlb_misc, TLB_MISC, G);
+
+                if ((tlb_g == 1 || tlb_asid == csr_asid) &&
+                    (vpn == (tlb_vppn >> compare_shift))) {
+                    *index = i;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /* Search STLB */
     for (i = 0; i < 8; ++i) {
         tlb = &env->tlb[i * 256 + stlb_idx];
@@ -160,9 +185,23 @@ bool loongarch_tlb_search(CPULoongArchState *env, target_ulong vaddr,
     return hit_stlb | hit_mtlb;
 }
 
-static void hw_ptw_setVD(uint64_t* csr_tlbrelo,
+static void hw_ptw_setVD(CPULoongArchState *env, uint64_t* csr_tlbrelo,
                          uint64_t pte_addr, MMUAccessType access_type)
 {
+    if (is_la32r(env)) {
+        bool v = FIELD_EX64(*csr_tlbrelo, TLBENTRY, V);
+        bool d = FIELD_EX64(*csr_tlbrelo, TLBENTRY, D);
+        bool write_d = access_type == MMU_DATA_STORE && v && !d;
+
+        if (write_d) {
+            *csr_tlbrelo = FIELD_DP64(*csr_tlbrelo, TLBENTRY, D, 1);
+            uint32_t pte = ram_lduw(pte_addr & TARGET_PHYS_MASK);
+            pte = FIELD_DP32(pte, TLBENTRY, D, 1);
+            ram_stw(pte_addr & TARGET_PHYS_MASK, pte);
+        }
+        return;
+    }
+
     bool p = FIELD_EX64(*csr_tlbrelo, TLBENTRY, P);
     bool v = FIELD_EX64(*csr_tlbrelo, TLBENTRY, V);
     bool w = FIELD_EX64(*csr_tlbrelo, TLBENTRY, W);
@@ -242,29 +281,53 @@ again:
         helper_ldpte(env, pt_base, 0, 0, &pte0_phys_addr);
         helper_ldpte(env, pt_base, 1, 0, &pte1_phys_addr);
 
+        uint8_t tlb_ps = FIELD_EX64(env->CSR_STLBPS, CSR_STLBPS, PS);
+        is_odd_page = (address >> tlb_ps) & 0x1;/* Odd or even */
+
         if (ptw_hw_setVD) {
             if (is_huge) {
-                hw_ptw_setVD(&env->CSR_TLBRELO0, huge_phys_addr, access_type);
-                hw_ptw_setVD(&env->CSR_TLBRELO1, huge_phys_addr, access_type);
+                hw_ptw_setVD(env, &env->CSR_TLBRELO0, huge_phys_addr, access_type);
+                hw_ptw_setVD(env, &env->CSR_TLBRELO1, huge_phys_addr, access_type);
             } else {
-                uint8_t tlb_ps = FIELD_EX64(env->CSR_STLBPS, CSR_STLBPS, PS);
-                is_odd_page = (address >> tlb_ps) & 0x1;/* Odd or even */
                 if (is_odd_page) {
-                    hw_ptw_setVD(&env->CSR_TLBRELO1, pte1_phys_addr, access_type);
+                    hw_ptw_setVD(env, &env->CSR_TLBRELO1, pte1_phys_addr, access_type);
                 } else {
-                    hw_ptw_setVD(&env->CSR_TLBRELO0, pte0_phys_addr, access_type);
+                    hw_ptw_setVD(env, &env->CSR_TLBRELO0, pte0_phys_addr, access_type);
                 }
             }
-            /* Set the V bit in the tlb entry to the value
-             * of the P bit in the page table entry */
-            env->CSR_TLBRELO0 = FIELD_DP64(env->CSR_TLBRELO0, TLBENTRY, V, FIELD_EX64(env->CSR_TLBRELO0, TLBENTRY, P));
-            env->CSR_TLBRELO1 = FIELD_DP64(env->CSR_TLBRELO1, TLBENTRY, V, FIELD_EX64(env->CSR_TLBRELO1, TLBENTRY, P));
+            if (!is_la32r(env)) {
+                /* Set the V bit in the tlb entry to the value
+                 * of the P bit in the page table entry */
+                env->CSR_TLBRELO0 = FIELD_DP64(env->CSR_TLBRELO0, TLBENTRY, V,
+                                               FIELD_EX64(env->CSR_TLBRELO0, TLBENTRY, P));
+                env->CSR_TLBRELO1 = FIELD_DP64(env->CSR_TLBRELO1, TLBENTRY, V,
+                                               FIELD_EX64(env->CSR_TLBRELO1, TLBENTRY, P));
+            }
 
             // Since during the address translation process,
             // when tlb hits but D bit needs to be written,
             // ptw will be used to write D bit, so the hit tlb
             // entry needs to be invalidated here.
             // Otherwise, multiple hits in tlb may occur.
+            helper_invtlb_page_asid_or_g(env, env->CSR_ASID, address);
+        }
+
+        if (!is_la32r(env)) {
+            env->CSR_TLBRELO0 = FIELD_DP64(env->CSR_TLBRELO0, TLBENTRY, V,
+                                           FIELD_EX64(env->CSR_TLBRELO0, TLBENTRY, V) |
+                                           FIELD_EX64(env->CSR_TLBRELO0, TLBENTRY, P));
+            env->CSR_TLBRELO1 = FIELD_DP64(env->CSR_TLBRELO1, TLBENTRY, V,
+                                           FIELD_EX64(env->CSR_TLBRELO1, TLBENTRY, V) |
+                                           FIELD_EX64(env->CSR_TLBRELO1, TLBENTRY, P));
+        }
+        if (!is_la32r(env) && access_type == MMU_DATA_STORE) {
+            uint64_t *tlbrelo = is_odd_page ? &env->CSR_TLBRELO1 : &env->CSR_TLBRELO0;
+            if (FIELD_EX64(*tlbrelo, TLBENTRY, V) &&
+                FIELD_EX64(*tlbrelo, TLBENTRY, W)) {
+                *tlbrelo = FIELD_DP64(*tlbrelo, TLBENTRY, D, 1);
+            }
+        }
+        if (match && tlbret == TLBRET_PTW_SET_D) {
             helper_invtlb_page_asid_or_g(env, env->CSR_ASID, address);
         }
 

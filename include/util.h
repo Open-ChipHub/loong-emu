@@ -118,7 +118,7 @@ static inline bool is_directory(const char *path) {
 extern FILE* logfile;
 static inline void qemu_log(const char *fmt, ...)
 {
-    FILE *f = logfile;
+    FILE *f = logfile ? logfile : stderr;
     va_list ap;
     va_start(ap, fmt);
     vfprintf(f, fmt, ap);

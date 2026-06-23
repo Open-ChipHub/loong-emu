@@ -1687,6 +1687,11 @@ static bool trans_idle(CPULoongArchState *env, arg_idle *restrict a) {return fal
 
 #else
 
+static inline uint64_t helper_csr_save_wmask(CPULoongArchState *env)
+{
+    return is_la64(env) ? ~0ULL : 0xffffffffULL;
+}
+
 /* Read a CSR register by index. Returns the current value. */
 uint64_t helper_read_csr(CPULoongArchState *env, int csr_index) {
     uint64_t old_v = 0;
@@ -1717,22 +1722,10 @@ uint64_t helper_read_csr(CPULoongArchState *env, int csr_index) {
         case LOONGARCH_CSR_PRCFG1         :old_v = env->CSR_PRCFG1; break;
         case LOONGARCH_CSR_PRCFG2         :old_v = env->CSR_PRCFG2; break;
         case LOONGARCH_CSR_PRCFG3         :old_v = env->CSR_PRCFG3; break;
-        case LOONGARCH_CSR_SAVE(0)        :old_v = env->CSR_SAVE[0]; break;
-        case LOONGARCH_CSR_SAVE(1)        :old_v = env->CSR_SAVE[1]; break;
-        case LOONGARCH_CSR_SAVE(2)        :old_v = env->CSR_SAVE[2]; break;
-        case LOONGARCH_CSR_SAVE(3)        :old_v = env->CSR_SAVE[3]; break;
-        case LOONGARCH_CSR_SAVE(4)        :old_v = env->CSR_SAVE[4]; break;
-        case LOONGARCH_CSR_SAVE(5)        :old_v = env->CSR_SAVE[5]; break;
-        case LOONGARCH_CSR_SAVE(6)        :old_v = env->CSR_SAVE[6]; break;
-        case LOONGARCH_CSR_SAVE(7)        :old_v = env->CSR_SAVE[7]; break;
-        case LOONGARCH_CSR_SAVE(8)        :old_v = env->CSR_SAVE[8]; break;
-        case LOONGARCH_CSR_SAVE(9)        :old_v = env->CSR_SAVE[9]; break;
-        case LOONGARCH_CSR_SAVE(10)       :old_v = env->CSR_SAVE[10]; break;
-        case LOONGARCH_CSR_SAVE(11)       :old_v = env->CSR_SAVE[11]; break;
-        case LOONGARCH_CSR_SAVE(12)       :old_v = env->CSR_SAVE[12]; break;
-        case LOONGARCH_CSR_SAVE(13)       :old_v = env->CSR_SAVE[13]; break;
-        case LOONGARCH_CSR_SAVE(14)       :old_v = env->CSR_SAVE[14]; break;
-        case LOONGARCH_CSR_SAVE(15)       :old_v = env->CSR_SAVE[15]; break;
+        case LOONGARCH_CSR_SAVE(0) ... LOONGARCH_CSR_SAVE(15):
+            old_v = env->CSR_SAVE[csr_index - LOONGARCH_CSR_SAVE(0)] &
+                    helper_csr_save_wmask(env);
+            break;
         case LOONGARCH_CSR_TID            :old_v = sextract64(env->CSR_TID, 0, 32); break;
         case LOONGARCH_CSR_TCFG           :old_v = env->CSR_TCFG; break;
         case LOONGARCH_CSR_TVAL           :old_v = env->timer_counter; break;
@@ -1794,7 +1787,28 @@ uint64_t mask_write(uint64_t old, uint64_t new, uint64_t mask) {
 uint64_t helper_write_csr(CPULoongArchState *env, int csr_index, uint64_t new_v, uint64_t mask) {
     uint64_t old_v = 0;
     switch (csr_index) {
-        case LOONGARCH_CSR_CRMD           :old_v = env->CSR_CRMD; env->CSR_CRMD = mask_write(env->CSR_CRMD, new_v, mask & LOONGARCH_CSR_CRMD_WMASK); cpu_clear_tc(env); break;
+        case LOONGARCH_CSR_CRMD: {
+            uint64_t wmask = LOONGARCH_CSR_CRMD_WMASK;
+            if (is_la32r(env)) {
+                wmask &= ~R_CSR_CRMD_WE_MASK;
+                uint64_t active = mask & wmask;
+                if (active & (R_CSR_CRMD_DA_MASK | R_CSR_CRMD_PG_MASK)) {
+                    uint64_t next_da = (active & R_CSR_CRMD_DA_MASK) ?
+                        FIELD_EX64(new_v, CSR_CRMD, DA) :
+                        FIELD_EX64(env->CSR_CRMD, CSR_CRMD, DA);
+                    uint64_t next_pg = (active & R_CSR_CRMD_PG_MASK) ?
+                        FIELD_EX64(new_v, CSR_CRMD, PG) :
+                        FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PG);
+                    if (!(next_da ^ next_pg)) {
+                        wmask &= ~(R_CSR_CRMD_DA_MASK | R_CSR_CRMD_PG_MASK);
+                    }
+                }
+            }
+            old_v = env->CSR_CRMD;
+            env->CSR_CRMD = mask_write(env->CSR_CRMD, new_v, mask & wmask);
+            cpu_clear_tc(env);
+            break;
+        }
         case LOONGARCH_CSR_PRMD           :old_v = env->CSR_PRMD; env->CSR_PRMD = mask_write(env->CSR_PRMD, new_v, mask & LOONGARCH_CSR_PRMD_WMASK); break;
         case LOONGARCH_CSR_EUEN: {
             uint64_t wmask = LOONGARCH_CSR_EUEN_WMASK;
@@ -1811,8 +1825,18 @@ uint64_t helper_write_csr(CPULoongArchState *env, int csr_index, uint64_t new_v,
         case LOONGARCH_CSR_EENTRY         :old_v = env->CSR_EENTRY; env->CSR_EENTRY = mask_write(env->CSR_EENTRY, new_v, mask & LOONGARCH_CSR_EENTRY_WMASK); break;
         case LOONGARCH_CSR_TLBIDX         :old_v = sextract64(env->CSR_TLBIDX, 0, 32); env->CSR_TLBIDX = mask_write(env->CSR_TLBIDX, new_v, mask & LOONGARCH_CSR_TLBIDX_WMASK); break;
         case LOONGARCH_CSR_TLBEHI         :old_v = sextract64(env->CSR_TLBEHI, 0, FIELD_EX64(env->cpucfg[1], CPUCFG1, VALEN) + 1); env->CSR_TLBEHI = mask_write(env->CSR_TLBEHI, new_v, mask & (is_la64(env) ? LOONGARCH_CSR_TLBEHI_64_WMASK : LOONGARCH_CSR_TLBEHI_32_WMASK)); break;
-        case LOONGARCH_CSR_TLBELO0        :old_v = env->CSR_TLBELO0; env->CSR_TLBELO0 = mask_write(env->CSR_TLBELO0, new_v, mask); break;
-        case LOONGARCH_CSR_TLBELO1        :old_v = env->CSR_TLBELO1; env->CSR_TLBELO1 = mask_write(env->CSR_TLBELO1, new_v, mask); break;
+        case LOONGARCH_CSR_TLBELO0: {
+            uint64_t wmask = is_la64(env) ? LOONGARCH_CSR_TLBELO_64_WMASK : (0xffffffffULL & ~0x80ULL);
+            old_v = env->CSR_TLBELO0;
+            env->CSR_TLBELO0 = mask_write(env->CSR_TLBELO0, new_v, mask & wmask) & wmask;
+            break;
+        }
+        case LOONGARCH_CSR_TLBELO1: {
+            uint64_t wmask = is_la64(env) ? LOONGARCH_CSR_TLBELO_64_WMASK : (0xffffffffULL & ~0x80ULL);
+            old_v = env->CSR_TLBELO1;
+            env->CSR_TLBELO1 = mask_write(env->CSR_TLBELO1, new_v, mask & wmask) & wmask;
+            break;
+        }
         case LOONGARCH_CSR_ASID           :old_v = env->CSR_ASID; env->CSR_ASID = mask_write(env->CSR_ASID, new_v, mask & LOONGARCH_CSR_ASID_WMASK); cpu_clear_tc(env); break;
         case LOONGARCH_CSR_PGDL           :old_v = env->CSR_PGDL; env->CSR_PGDL = mask_write(env->CSR_PGDL, new_v, mask & LOONGARCH_CSR_PGDL_WMASK); break;
         case LOONGARCH_CSR_PGDH           :old_v = env->CSR_PGDH; env->CSR_PGDH = mask_write(env->CSR_PGDH, new_v, mask & LOONGARCH_CSR_PGDH_WMASK); break;
@@ -1825,22 +1849,14 @@ uint64_t helper_write_csr(CPULoongArchState *env, int csr_index, uint64_t new_v,
         case LOONGARCH_CSR_PRCFG1         :old_v = env->CSR_PRCFG1; break;
         case LOONGARCH_CSR_PRCFG2         :old_v = env->CSR_PRCFG2; break;
         case LOONGARCH_CSR_PRCFG3         :old_v = env->CSR_PRCFG3; break;
-        case LOONGARCH_CSR_SAVE(0)        :old_v = env->CSR_SAVE[0]; env->CSR_SAVE[0] = mask_write(env->CSR_SAVE[0], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(1)        :old_v = env->CSR_SAVE[1]; env->CSR_SAVE[1] = mask_write(env->CSR_SAVE[1], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(2)        :old_v = env->CSR_SAVE[2]; env->CSR_SAVE[2] = mask_write(env->CSR_SAVE[2], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(3)        :old_v = env->CSR_SAVE[3]; env->CSR_SAVE[3] = mask_write(env->CSR_SAVE[3], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(4)        :old_v = env->CSR_SAVE[4]; env->CSR_SAVE[4] = mask_write(env->CSR_SAVE[4], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(5)        :old_v = env->CSR_SAVE[5]; env->CSR_SAVE[5] = mask_write(env->CSR_SAVE[5], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(6)        :old_v = env->CSR_SAVE[6]; env->CSR_SAVE[6] = mask_write(env->CSR_SAVE[6], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(7)        :old_v = env->CSR_SAVE[7]; env->CSR_SAVE[7] = mask_write(env->CSR_SAVE[7], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(8)        :old_v = env->CSR_SAVE[8]; env->CSR_SAVE[8] = mask_write(env->CSR_SAVE[8], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(9)        :old_v = env->CSR_SAVE[9]; env->CSR_SAVE[9] = mask_write(env->CSR_SAVE[9], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(10)       :old_v = env->CSR_SAVE[10]; env->CSR_SAVE[10] = mask_write(env->CSR_SAVE[10], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(11)       :old_v = env->CSR_SAVE[11]; env->CSR_SAVE[11] = mask_write(env->CSR_SAVE[11], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(12)       :old_v = env->CSR_SAVE[12]; env->CSR_SAVE[12] = mask_write(env->CSR_SAVE[12], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(13)       :old_v = env->CSR_SAVE[13]; env->CSR_SAVE[13] = mask_write(env->CSR_SAVE[13], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(14)       :old_v = env->CSR_SAVE[14]; env->CSR_SAVE[14] = mask_write(env->CSR_SAVE[14], new_v, mask); break;
-        case LOONGARCH_CSR_SAVE(15)       :old_v = env->CSR_SAVE[15]; env->CSR_SAVE[15] = mask_write(env->CSR_SAVE[15], new_v, mask); break;
+        case LOONGARCH_CSR_SAVE(0) ... LOONGARCH_CSR_SAVE(15): {
+            uint64_t save_mask = helper_csr_save_wmask(env);
+            int save_idx = csr_index - LOONGARCH_CSR_SAVE(0);
+            old_v = env->CSR_SAVE[save_idx] & save_mask;
+            env->CSR_SAVE[save_idx] = mask_write(env->CSR_SAVE[save_idx],
+                                                 new_v, mask & save_mask);
+            break;
+        }
         case LOONGARCH_CSR_TID            :old_v = sextract64(env->CSR_TID, 0, 32); env->CSR_TID = mask_write(env->CSR_TID, new_v, mask & LOONGARCH_CSR_TID_WMASK); break;
         case LOONGARCH_CSR_TCFG           :old_v = env->CSR_TCFG; env->CSR_TCFG = mask_write(env->CSR_TCFG, new_v, mask);
 #ifndef CONFIG_DIFF

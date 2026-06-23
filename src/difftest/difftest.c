@@ -183,6 +183,30 @@ void difftest_set_ramsize(size_t n)
     saved_ram_size = n;
 }
 
+static void difftest_init_core_arch(CPULoongArchState *env)
+{
+    const char *arch = getenv("LOONG64_EMU_ARCH");
+
+    if (arch == NULL || arch[0] == '\0' ||
+        strcmp(arch, "native") == 0 || strcmp(arch, "auto") == 0) {
+        loongarch_core_initfn(env);
+    } else if (strcmp(arch, "loongarch32r") == 0 || strcmp(arch, "la32r") == 0) {
+        loongarch_la32r_initfn(env);
+    } else if (strcmp(arch, "loongarch32s") == 0 || strcmp(arch, "loongarch32") == 0 ||
+               strcmp(arch, "la32s") == 0) {
+        loongarch_la32s_initfn(env);
+    } else if (strcmp(arch, "loongarch64") == 0 || strcmp(arch, "la464") == 0) {
+        loongarch_la464_initfn(env);
+    } else if (strcmp(arch, "openc910") == 0) {
+        loongarch_openc910_initfn(env);
+    } else if (strcmp(arch, "swiftcore") == 0) {
+        loongarch_swiftcore_initfn(env);
+    } else {
+        fprintf(stderr, "Warning: unknown LOONG64_EMU_ARCH '%s', using default core\n", arch);
+        loongarch_core_initfn(env);
+    }
+}
+
 void difftest_init(void)
 {
     size_t ram_size_bytes = saved_ram_size;
@@ -199,16 +223,18 @@ void difftest_init(void)
     CPULoongArchState* env = &cpu->env;
     cs->env = env;
     cpu_reset(cs);
-    loongarch_core_initfn(env);
+    difftest_init_core_arch(env);
     cpu_clear_tc(env);
     env->timer_counter = INT64_MAX;
-    hw_ptw = true;
+    hw_ptw = !is_la32r(env);
 
     current_env = env;
 
     difftest_init_ram(ram_size_bytes);
 
-    check_level |= CPU_CHECK_TLB_MHIT;
+    if (!is_la32r(env)) {
+        check_level |= CPU_CHECK_TLB_MHIT;
+    }
 }
 
 void difftest_init_v2(unsigned state_size)
@@ -246,13 +272,64 @@ static bool difftest_is_normal_page_exception(uint64_t exception)
     return exception >= EXCCODE_PIL && exception <= EXCCODE_PPI;
 }
 
+#define DIFFTEST_EXCCODE_TLBR EXCODE(0x3f, 0)
+
+static bool difftest_is_tlb_refill_exception(uint64_t exception)
+{
+    return exception == DIFFTEST_EXCCODE_TLBR;
+}
+
+static void difftest_update_tlb_refill_csrs(CPULoongArchState *env, uint64_t badv)
+{
+    env->CSR_BADV = badv;
+    env->CSR_TLBEHI = badv & (TARGET_PAGE_MASK << 1);
+    if (is_la32r(env)) {
+        return;
+    }
+    env->CSR_TLBRBADV = badv;
+    if (is_la64(env)) {
+        env->CSR_TLBREHI = FIELD_DP64(env->CSR_TLBREHI, CSR_TLBREHI_64,
+                                      VPPN, extract64(badv, 13, 35));
+    } else {
+        env->CSR_TLBREHI = FIELD_DP64(env->CSR_TLBREHI, CSR_TLBREHI_32,
+                                      VPPN, extract64(badv, 13, 19));
+    }
+}
+
 static void difftest_enter_exception(CPULoongArchState *env, uint64_t exception, uint64_t badv)
 {
     uint32_t vec_size = FIELD_EX64(env->CSR_ECFG, CSR_ECFG, VS);
 
+    if (difftest_is_tlb_refill_exception(exception)) {
+        difftest_update_tlb_refill_csrs(env, badv);
+        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ECODE, EXCODE_MCODE(exception));
+        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ESUBCODE, EXCODE_SUBCODE(exception));
+        env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PPLV,
+                                   FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV));
+        env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PIE,
+                                   FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE));
+        env->CSR_ERA = env->pc;
+        if (!is_la32r(env)) {
+            env->CSR_TLBRPRMD = FIELD_DP64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PPLV,
+                                           FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV));
+            env->CSR_TLBRPRMD = FIELD_DP64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PIE,
+                                           FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE));
+            env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR, 1);
+            env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA, PC, env->pc >> 2);
+        }
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, DA, 1);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PG, 0);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, 0);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE, 0);
+        set_pc(env, env->CSR_TLBRENTRY);
+        env_cpu(env)->exception_index = -1;
+        return;
+    }
+
     if (difftest_is_normal_page_exception(exception)) {
         env->CSR_BADV = badv;
         env->CSR_TLBEHI = badv & (TARGET_PAGE_MASK << 1);
+        helper_invtlb_page_asid_or_g(env, env->CSR_ASID, badv);
     }
 
     env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ECODE, EXCODE_MCODE(exception));
@@ -277,6 +354,9 @@ void difftest_guided_exec(void *guide_buf)
     DifftestExecutionGuide *guide = (DifftestExecutionGuide *)guide_buf;
 
     if (guide->force_raise_exception) {
+        if (guide->force_set_jump_target) {
+            set_pc(current_env, guide->jump_target);
+        }
         difftest_enter_exception(current_env, guide->exception_num, guide->mtval);
         return;
     }
@@ -550,6 +630,11 @@ void difftest_raise_intr(uint64_t intr_num)
     }
     set_difftest_intr_pending(env, intr_num);
     difftest_enter_interrupt(env);
+}
+
+void difftest_tlbfill_index_set(uint32_t index)
+{
+    helper_set_tlbfill_index((int)index);
 }
 
 // ── Fine-grained helpers ──

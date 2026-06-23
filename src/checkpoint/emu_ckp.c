@@ -220,8 +220,8 @@ static size_t build_restore_stub(CPULoongArchState *env, uint32_t *code, size_t 
 void save_difftest_emu_checkpoint(CPULoongArchState *env, const char *filename)
 {
     uint64_t image_size = parse_size_env("LAEMU_DIFFTEST_EMU_CKP_RAM_SIZE", DIFFTEST_EMU_CKP_DEFAULT_SIZE);
-    if (image_size < DIFFTEST_EMU_CKP_STATE_OFF + DIFFTEST_EMU_CKP_PAGE_SIZE) {
-        image_size = DIFFTEST_EMU_CKP_STATE_OFF + DIFFTEST_EMU_CKP_PAGE_SIZE;
+    if (image_size < DIFFTEST_EMU_CKP_PMEM_BASE + DIFFTEST_EMU_CKP_STATE_OFF + DIFFTEST_EMU_CKP_PAGE_SIZE) {
+        image_size = DIFFTEST_EMU_CKP_PMEM_BASE + DIFFTEST_EMU_CKP_STATE_OFF + DIFFTEST_EMU_CKP_PAGE_SIZE;
     }
 
     int fd = open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0644);
@@ -242,8 +242,8 @@ void save_difftest_emu_checkpoint(CPULoongArchState *env, const char *filename)
     uint64_t state[256] = {0};
     size_t code_size = build_restore_stub(env, code, sizeof(code) / sizeof(code[0]),
                                           state, sizeof(state) / sizeof(state[0]));
-    pwrite_nofail(fd, code, code_size, 0);
-    pwrite_nofail(fd, state, sizeof(state), DIFFTEST_EMU_CKP_STATE_OFF);
+    pwrite_nofail(fd, code, code_size, DIFFTEST_EMU_CKP_PMEM_BASE);
+    pwrite_nofail(fd, state, sizeof(state), DIFFTEST_EMU_CKP_PMEM_BASE + DIFFTEST_EMU_CKP_STATE_OFF);
 
     if (ftruncate(fd, image_size) != 0) {
         fprintf(stderr, "ftruncate failed for %s: %s\n", filename, strerror(errno));

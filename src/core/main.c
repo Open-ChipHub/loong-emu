@@ -210,7 +210,7 @@ void usage(void) {
     fprintf(stderr, "-g Enable gdbserver\n");
     fprintf(stderr, "--smp n       Number of virtual CPUs\n");
     fprintf(stderr, "-w Force enable hardware page table walker\n");
-    fprintf(stderr, "-A arch       CPU model: la464, loongarch64, openc910, swiftcore\n");
+    fprintf(stderr, "-A arch       CPU model: la464, loongarch64, openc910, swiftcore, la32r, la32s\n");
     fprintf(stderr, "-N host:port  Enable network difftest against QEMU GDB stub\n");
     fprintf(stderr, "-R file       Instruction stats report (default: report_instruction.md)\n");
     laemu_exit(EXIT_SUCCESS);
@@ -646,6 +646,26 @@ static void loongarch_cpu_do_interrupt(CPUState *cs)
                      loongarch_exception_name(cs->exception_index));
     }
 
+    if (is_la32r(env) && cs->exception_index == EXCCODE_TLBR) {
+        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ECODE,
+                                    EXCODE_MCODE(cs->exception_index));
+        env->CSR_ESTAT = FIELD_DP64(env->CSR_ESTAT, CSR_ESTAT, ESUBCODE,
+                                    EXCODE_SUBCODE(cs->exception_index));
+        env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PPLV,
+                                   FIELD_EX64(env->CSR_CRMD, CSR_CRMD, PLV));
+        env->CSR_PRMD = FIELD_DP64(env->CSR_PRMD, CSR_PRMD, PIE,
+                                   FIELD_EX64(env->CSR_CRMD, CSR_CRMD, IE));
+        env->CSR_ERA = env->pc;
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, DA, 1);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PG, 0);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, 0);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE, 0);
+        env->tlbr_count ++;
+        set_pc(env, env->CSR_TLBRENTRY);
+        cs->exception_index = -1;
+        return;
+    }
+
     switch (cs->exception_index) {
     case EXCCODE_DBP:
         env->CSR_DBG = FIELD_DP64(env->CSR_DBG, CSR_DBG, DCL, 1);
@@ -1006,6 +1026,14 @@ int exec_env(CPULoongArchState *env) {
             }
 #endif
             env->ecount ++;
+#if defined(CONFIG_DIFF)
+            if (singlestep > 0) {
+                --singlestep;
+                if (singlestep == 0) {
+                    return 0;
+                }
+            }
+#endif
         }
     }
 }
@@ -1173,17 +1201,107 @@ static inline bool is_swiftcore_uart(hwaddr ha)
            ((ha & ~0xfULL) == 0x1FF10000ULL);
 }
 
+typedef struct SwiftCoreUartState {
+    uint8_t ier;
+    uint8_t lcr;
+    uint8_t mcr;
+    uint8_t scr;
+    uint8_t dll;
+    uint8_t dlm;
+    uint8_t fcr;
+    bool tx_intr_pending;
+} SwiftCoreUartState;
+
+static SwiftCoreUartState swiftcore_uart;
+
+static inline bool swiftcore_uart_interrupt(void)
+{
+    return (swiftcore_uart.ier & 0x2) && swiftcore_uart.tx_intr_pending;
+}
+
 static uint64_t swiftcore_uart_ld(hwaddr ha, int size)
 {
     uint64_t data = 0;
+    bool clear_tx_intr = false;
 
     for (int i = 0; i < size; i++) {
-        if (((ha + i) & 0xfULL) == 5) {
-            data |= 0x60ULL << (i * 8);
+        uint64_t off = (ha + i) & 0xfULL;
+        uint8_t byte = 0;
+        switch (off) {
+        case 0:
+            byte = (swiftcore_uart.lcr & 0x80) ? swiftcore_uart.dll : 0;
+            break;
+        case 1:
+            byte = (swiftcore_uart.lcr & 0x80) ? swiftcore_uart.dlm : swiftcore_uart.ier;
+            break;
+        case 2:
+            byte = swiftcore_uart_interrupt() ? 0x02 : 0x01;
+            clear_tx_intr = true;
+            break;
+        case 3:
+            byte = swiftcore_uart.lcr;
+            break;
+        case 4:
+            byte = swiftcore_uart.mcr;
+            break;
+        case 5:
+            byte = 0x60;
+            break;
+        case 7:
+            byte = swiftcore_uart.scr;
+            break;
+        default:
+            break;
         }
+        data |= (uint64_t)byte << (i * 8);
+    }
+
+    if (clear_tx_intr) {
+        swiftcore_uart.tx_intr_pending = false;
     }
 
     return data;
+}
+
+static void swiftcore_uart_st(hwaddr ha, uint64_t data, int size)
+{
+    for (int i = 0; i < size; i++) {
+        uint64_t off = (ha + i) & 0xfULL;
+        uint8_t byte = (data >> (i * 8)) & 0xff;
+        switch (off) {
+        case 0:
+            if (swiftcore_uart.lcr & 0x80) {
+                swiftcore_uart.dll = byte;
+            } else {
+                swiftcore_uart.tx_intr_pending = true;
+            }
+            break;
+        case 1:
+            if (swiftcore_uart.lcr & 0x80) {
+                swiftcore_uart.dlm = byte;
+            } else {
+                swiftcore_uart.ier = byte;
+                if (byte & 0x2) {
+                    swiftcore_uart.tx_intr_pending = true;
+                }
+            }
+            break;
+        case 2:
+            swiftcore_uart.fcr = byte;
+            break;
+        case 3:
+            swiftcore_uart.lcr = byte;
+            break;
+        case 4:
+            swiftcore_uart.mcr = byte;
+            break;
+        case 7:
+            swiftcore_uart.scr = byte;
+            break;
+        default:
+            break;
+        }
+    }
 }
 #endif
 
@@ -1193,6 +1311,7 @@ void do_io_st(hwaddr ha, uint64_t data, int size) {
     case 0x1FF10000 ... 0x1FF11000:
 #if defined(CONFIG_DIFF)
         if (is_swiftcore_uart(ha)) {
+            swiftcore_uart_st(ha, data, size);
             break;
         }
 #endif
@@ -1205,6 +1324,7 @@ void do_io_st(hwaddr ha, uint64_t data, int size) {
     case 0x1FE00000 ... 0x1FE01000:
 #if defined(CONFIG_DIFF)
         if (is_swiftcore_uart(ha)) {
+            swiftcore_uart_st(ha, data, size);
             break;
         }
 #endif

@@ -517,6 +517,7 @@ void loongarch_la32r_initfn(CPULoongArchState* env)
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, MTLB_ENTRY, 63);
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_WAYS, 7);
     env->CSR_PRCFG3 = FIELD_DP64(env->CSR_PRCFG3, CSR_PRCFG3, STLB_SETS, 8);
+    ptw_hw_setVD = 0;
 }
 
 void loongarch_la32s_initfn(CPULoongArchState* env)

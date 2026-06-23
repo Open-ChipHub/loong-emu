@@ -203,6 +203,7 @@ FIELD(FCSR0, CAUSE, 24, 5)
 #define  EXCCODE_PNR                 EXCODE(5, 0)
 #define  EXCCODE_PNX                 EXCODE(6, 0)
 #define  EXCCODE_PPI                 EXCODE(7, 0)
+#define  EXCCODE_TLBR                EXCODE(0x3f, 0)
 #define  EXCCODE_ADEF                EXCODE(8, 0) /* Different exception subcode */
 #define  EXCCODE_ADEM                EXCODE(8, 1)
 #define  EXCCODE_ALE                 EXCODE(9, 0)
@@ -721,6 +722,7 @@ void helper_tlbsrch(CPULoongArchState *env);
 void helper_tlbrd(CPULoongArchState *env);
 void helper_tlbwr(CPULoongArchState *env);
 void helper_tlbfill(CPULoongArchState *env);
+void helper_set_tlbfill_index(int index);
 void helper_tlbclr(CPULoongArchState *env);
 void helper_tlbflush(CPULoongArchState *env);
 void helper_invtlb_all(CPULoongArchState *env);

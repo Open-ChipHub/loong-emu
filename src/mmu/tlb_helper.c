@@ -10,6 +10,7 @@
 #include "cpu.h"
 #include "internals.h"
 #include "util.h"
+#include <stdlib.h>
 
 #define tlb_flush(...) ;
 #define invalidate_tlb(...) ;
@@ -55,14 +56,18 @@ static void raise_mmu_exception(CPULoongArchState *env, target_ulong address,
         break;
     case TLBRET_NOMATCH:
         /* No TLB match for a mapped address */
-        if (access_type == MMU_DATA_LOAD) {
+        if (is_la32r(env)) {
+            cs->exception_index = EXCCODE_TLBR;
+        } else if (access_type == MMU_DATA_LOAD) {
             cs->exception_index = EXCCODE_PIL;
         } else if (access_type == MMU_DATA_STORE) {
             cs->exception_index = EXCCODE_PIS;
         } else if (access_type == MMU_INST_FETCH) {
             cs->exception_index = EXCCODE_PIF;
         }
-        env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR, 1);
+        if (!is_la32r(env)) {
+            env->CSR_TLBRERA = FIELD_DP64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR, 1);
+        }
         break;
     case TLBRET_INVALID:
         /* TLB match with no valid bit */
@@ -93,11 +98,15 @@ static void raise_mmu_exception(CPULoongArchState *env, target_ulong address,
     }
 
     if (tlb_error == TLBRET_NOMATCH) {
-        env->CSR_TLBRBADV = address;
-        if (is_la64(env)) {
+        if (is_la32r(env)) {
+            env->CSR_BADV = address;
+            env->CSR_TLBEHI = address & (TARGET_PAGE_MASK << 1);
+        } else if (is_la64(env)) {
+            env->CSR_TLBRBADV = address;
             env->CSR_TLBREHI = FIELD_DP64(env->CSR_TLBREHI, CSR_TLBREHI_64,
                                         VPPN, extract64(address, 13, 35));
         } else {
+            env->CSR_TLBRBADV = address;
             env->CSR_TLBREHI = FIELD_DP64(env->CSR_TLBREHI, CSR_TLBREHI_32,
                                         VPPN, extract64(address, 13, 19));
         }
@@ -176,6 +185,16 @@ static uint32_t get_random_tlb(uint32_t low, uint32_t high)
     // qemu_guest_getrandom_nofail(&val, sizeof(val));
     val = rand();
     return val % (high - low + 1) + low;
+}
+
+static int forced_tlbfill_index = -1;
+
+void helper_set_tlbfill_index(int index)
+{
+    if (getenv("SWIFTCORE_TLBFILL_DBG")) {
+        fprintf(stderr, "[ref-tlbfill-set] index=%d\n", index);
+    }
+    forced_tlbfill_index = index;
 }
 
 void helper_tlbsrch(CPULoongArchState *env)
@@ -264,7 +283,13 @@ void helper_tlbfill(CPULoongArchState *env)
 
     stlb_ps = FIELD_EX64(env->CSR_STLBPS, CSR_STLBPS, PS);
 
-    if (pagesize == stlb_ps) {
+    bool forced = forced_tlbfill_index >= 0;
+    if (forced) {
+        index = forced_tlbfill_index;
+        forced_tlbfill_index = -1;
+    } else if (is_la32r(env)) {
+        index = get_random_tlb(0, 15);
+    } else if (pagesize == stlb_ps) {
         /* Only write into STLB bits [47:13] */
         address = entryhi & ~MAKE_64BIT_MASK(0, R_CSR_TLBEHI_64_VPPN_SHIFT);
 
@@ -282,6 +307,16 @@ void helper_tlbfill(CPULoongArchState *env)
 
     invalidate_tlb(env, index);
     fill_tlb_entry(env, index);
+    if (getenv("SWIFTCORE_TLBFILL_DBG") &&
+        (forced || getenv("SWIFTCORE_TLBFILL_DBG_VERBOSE"))) {
+        fprintf(stderr,
+                "[ref-tlbfill] index=%d forced=%d istlbr=%lu entryhi=%016lx tlbidx=%016lx elo0=%016lx elo1=%016lx tlbrelo0=%016lx tlbrelo1=%016lx\n",
+                index, forced,
+                FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR),
+                entryhi, env->CSR_TLBIDX,
+                env->CSR_TLBELO0, env->CSR_TLBELO1,
+                env->CSR_TLBRELO0, env->CSR_TLBRELO1);
+    }
 }
 
 void helper_tlbclr(CPULoongArchState *env)
@@ -477,7 +512,8 @@ target_ulong helper_lddir(CPULoongArchState *env, target_ulong base,
     index = (badvaddr >> dir_base) & ((1 << dir_width) - 1);
     phys = base | index << shift;
     *dir_phys_addr = phys;
-    ret = ldq_phys(cs->as, phys & TARGET_PHYS_MASK);
+    ret = is_la32r(env) ? ram_lduw(phys & TARGET_PHYS_MASK)
+                        : ldq_phys(cs->as, phys & TARGET_PHYS_MASK);
     return ret;
 }
 
@@ -538,7 +574,15 @@ void helper_ldpte(CPULoongArchState *env, target_ulong base, target_ulong odd,
 
         phys = base | (odd ? ptoffset1 : ptoffset0);
         *pte_phys_addr = phys;
-        tmp0 = ldq_phys(cs->as, phys & TARGET_PHYS_MASK);
+        tmp0 = is_la32r(env) ? ram_lduw(phys & TARGET_PHYS_MASK)
+                             : ldq_phys(cs->as, phys & TARGET_PHYS_MASK);
+        if (getenv("SWIFTCORE_LDPTE_DBG")) {
+            fprintf(stderr,
+                    "[ref-ldpte] base=%016lx odd=%lu phys=%016lx val=%016lx badv=%016lx pwcl=%016lx\n",
+                    (uint64_t)base, (uint64_t)odd,
+                    (uint64_t)(phys & TARGET_PHYS_MASK), (uint64_t)tmp0,
+                    (uint64_t)badv, (uint64_t)env->CSR_PWCL);
+        }
         ps = ptbase;
     }
 
@@ -594,6 +638,8 @@ int probe_get_physical_address(CPULoongArchState *env, hwaddr *physical,
 void helper_ertn(CPULoongArchState *env)
 {
     uint64_t csr_pplv, csr_pie;
+    bool la32r_tlbr = is_la32r(env) &&
+        FIELD_EX64(env->CSR_ESTAT, CSR_ESTAT, ECODE) == 0x3f;
     if (FIELD_EX64(env->CSR_MERRCTL, CSR_MERRCTL, ISMERR)) {
         env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PLV, (env->CSR_MERRCTL >> 2) & 0x3);
         env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, IE,  (env->CSR_MERRCTL >> 4) & 0x1);
@@ -606,6 +652,15 @@ void helper_ertn(CPULoongArchState *env)
         qemu_log_mask(CPU_LOG_INT, "%s: MERRERA " TARGET_FMT_lx "\n",
                       __func__, env->CSR_MERRERA);
         return;
+    } else if (la32r_tlbr) {
+        csr_pplv = FIELD_EX64(env->CSR_PRMD, CSR_PRMD, PPLV);
+        csr_pie = FIELD_EX64(env->CSR_PRMD, CSR_PRMD, PIE);
+
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, DA, 0);
+        env->CSR_CRMD = FIELD_DP64(env->CSR_CRMD, CSR_CRMD, PG, 1);
+        set_pc(env, env->CSR_ERA);
+        qemu_log_mask(CPU_LOG_INT, "%s: ERA " TARGET_FMT_lx " (LA32R TLBR)\n",
+                      __func__, env->CSR_ERA);
     } else if (FIELD_EX64(env->CSR_TLBRERA, CSR_TLBRERA, ISTLBR)) {
         csr_pplv = FIELD_EX64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PPLV);
         csr_pie = FIELD_EX64(env->CSR_TLBRPRMD, CSR_TLBRPRMD, PIE);

@@ -641,11 +641,14 @@ static uint64_t add_addr(int64_t base, int64_t disp) {
 
 static int8_t ld_b(CPULoongArchState *env, uint64_t va) {
     hwaddr ha = load_pa(env, va);
+    uint8_t data;
 #if defined(CONFIG_USER_ONLY)
-    return ram_ldb(ha);
+    data = ram_ldub(ha);
 #else
-    return is_io(ha) ? do_io_ld(ha, 1) : ram_ldb(ha);
+    data = is_io(ha) ? do_io_ld(ha, 1) : ram_ldub(ha);
 #endif
+    studio_protocol_record_memory_access(env, "read", va, ha, 1, data);
+    return (int8_t)data;
 }
 
 static int16_t ld_h(CPULoongArchState *env, uint64_t va) {
@@ -659,6 +662,7 @@ static int16_t ld_h(CPULoongArchState *env, uint64_t va) {
     } else {
         if (is_aligned(va, data_size)) {
             data = ram_ldh(ha);
+            studio_protocol_record_memory_access(env, "read", va, ha, data_size, data);
         } else {
             PERF_INC(COUNTER_INST_CROSS_PAGE_LOAD);
             data = 0;
@@ -681,6 +685,7 @@ static int32_t ld_w(CPULoongArchState *env, uint64_t va) {
     } else {
         if (is_aligned(va, data_size)) {
             data = ram_ldw(ha);
+            studio_protocol_record_memory_access(env, "read", va, ha, data_size, data);
         } else {
             PERF_INC(COUNTER_INST_CROSS_PAGE_LOAD);
             data = 0;
@@ -703,6 +708,7 @@ static int64_t ld_d(CPULoongArchState *env, uint64_t va) {
     } else {
         if (is_aligned(va, data_size)) {
             data = ram_ldd(ha);
+            studio_protocol_record_memory_access(env, "read", va, ha, data_size, data);
         } else {
             PERF_INC(COUNTER_INST_CROSS_PAGE_LOAD);
             data = 0;
@@ -721,6 +727,7 @@ static void st_b(CPULoongArchState *env, uint64_t va, uint8_t data) {
 #else
     is_io(ha) ? do_io_st(ha, data, 1) : ram_stb(ha, data);
 #endif
+    studio_protocol_record_memory_access(env, "write", va, ha, 1, data);
 }
 
 static void st_h(CPULoongArchState *env, uint64_t va, uint16_t data) {
@@ -733,6 +740,7 @@ static void st_h(CPULoongArchState *env, uint64_t va, uint16_t data) {
     } else {
         if (is_aligned(va, data_size)) {
             ram_sth(ha, data);
+            studio_protocol_record_memory_access(env, "write", va, ha, data_size, data);
         } else {
             PERF_INC(COUNTER_INST_CROSS_PAGE_LOAD);
             for (int i = (data_size - 1); i >= 0; i--){
@@ -752,6 +760,7 @@ static void st_w(CPULoongArchState *env, uint64_t va, uint32_t data) {
     } else {
         if (is_aligned(va, data_size)) {
             ram_stw(ha, data);
+            studio_protocol_record_memory_access(env, "write", va, ha, data_size, data);
         } else {
             PERF_INC(COUNTER_INST_CROSS_PAGE_LOAD);
             for (int i = (data_size - 1); i >= 0; i--){
@@ -771,6 +780,7 @@ static void st_d(CPULoongArchState *env, uint64_t va, uint64_t data) {
     } else {
         if (is_aligned(va, data_size)) {
             ram_std(ha, data);
+            studio_protocol_record_memory_access(env, "write", va, ha, data_size, data);
         } else {
             PERF_INC(COUNTER_INST_CROSS_PAGE_LOAD);
             for (int i = (data_size - 1); i >= 0; i--){
@@ -913,6 +923,10 @@ static bool trans_ibar(CPULoongArchState *env, arg_ibar *restrict a) {
     } else if (a->imm == 65) {
         fprintf(stderr, "[INST HACK] ibar 65 end %f\n", second() - begin_timestamp);
         dump_exec_info(env, stderr);
+        if (studio_protocol_enabled()) {
+            studio_protocol_request_stop();
+            return true;
+        }
         laemu_exit(0);
     }
 #endif
@@ -1586,6 +1600,10 @@ static bool trans_b(CPULoongArchState *env, arg_b *restrict a) {
     PERF_INC(COUNTER_INST_BRANCH);
 #ifndef CONFIG_DIFF
     if (!a->offs) {
+        if (studio_protocol_enabled()) {
+            studio_protocol_request_stop();
+            return true;
+        }
         laemu_exit(EXIT_SUCCESS);
     }
 #endif

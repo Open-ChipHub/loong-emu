@@ -7,7 +7,10 @@
 #if defined(CONFIG_USER_ONLY)
 #include "user.h"
 #endif
+#ifdef CONFIG_INSN_STATS
 #include "insn_stats.h"
+#endif
+#include "studio_protocol.h"
 
 #include "util.h"
 #include "smp.h"
@@ -200,7 +203,9 @@ bool interpreter(CPULoongArchState *env, uint32_t insn, INSCache* ic) {
             env->fpr[vd].vreg.UD[3] = 0;
         }
         env->gpr[0] = 0;
+#ifdef CONFIG_INSN_STATS
         insn_stats_classify_and_record(insn, ic->name);
+#endif
         return true;
     }
     if (decode(env, insn)) {
@@ -210,7 +215,9 @@ bool interpreter(CPULoongArchState *env, uint32_t insn, INSCache* ic) {
             env->fpr[vd].vreg.UD[3] = 0;
         }
         env->gpr[0] = 0;
+#ifdef CONFIG_INSN_STATS
         insn_stats_classify_and_record(insn, env->last_insn_name);
+#endif
         return true;
     } else {
         return false;

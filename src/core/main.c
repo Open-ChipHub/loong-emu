@@ -31,8 +31,14 @@
 #if defined(CONFIG_DIFF_NET)
 #include "diffnet.h"
 #endif
+#ifdef CONFIG_INSN_STATS
 #include "insn_stats.h"
+#define INSN_STATS_GETOPT "R:"
+#else
+#define INSN_STATS_GETOPT ""
+#endif
 #include "smp.h"
+#include "studio_protocol.h"
 
 #if defined(CONFIG_PLUGIN)
 la_emu_plugin_ops* plugin_ops;
@@ -58,7 +64,9 @@ static int  diffnet_port = -1;
 static bool diffnet_spawn_mode = false;
 #endif
 extern int check_signal;
+#ifdef CONFIG_INSN_STATS
 char *report_filename = "report_instruction.md";
+#endif
 const char *arch_name = NULL;
 const char *kernel_cmdline = NULL;
 
@@ -200,6 +208,7 @@ void usage(void) {
     fprintf(stderr, "la_emu_kernel -m n[G] -k kernel\n");
     fprintf(stderr, "-m Memory size(kernel mode)\n");
     fprintf(stderr, "-k Kernel vmlinux or checkpoint directory(kernel mode)\n");
+    fprintf(stderr, "--studio-json-final Output final state as Studio JSON\n");
 #else
     fprintf(stderr, "usage: la_emu_user [-d exec,cpu,page,strace,unimp] [-D logfile] program [arguments...]\n");
 #endif
@@ -212,7 +221,9 @@ void usage(void) {
     fprintf(stderr, "-w Force enable hardware page table walker\n");
     fprintf(stderr, "-A arch       CPU model: la464, loongarch64, openc910, swiftcore, la32r, la32s\n");
     fprintf(stderr, "-N host:port  Enable network difftest against QEMU GDB stub\n");
+#ifdef CONFIG_INSN_STATS
     fprintf(stderr, "-R file       Instruction stats report (default: report_instruction.md)\n");
+#endif
     laemu_exit(EXIT_SUCCESS);
 }
 
@@ -893,6 +904,10 @@ int exec_env(CPULoongArchState *env) {
                 }
 #endif
 
+                if (studio_protocol_hit_breakpoint(env)) {
+                    return 0;
+                }
+
 #if !defined (CONFIG_USER_ONLY) && !defined (CONFIG_DIFF)
                 loongarch_cpu_check_irq(env);
                 if (unlikely(loongarch_cpu_has_irq(env))) {
@@ -972,6 +987,9 @@ int exec_env(CPULoongArchState *env) {
                 int r = interpreter(env, insn, ic);
                 if (!is_la64(env)) env->pc = (uint32_t)env->pc;
                 test_pc = env->pc;
+                if (studio_protocol_stop_requested()) {
+                    return 0;
+                }
                 if (debug_print_pc) {
                     if (pre_pc != env->pc) {
                         fprintf(CKP_DP_PC, "%lx\n", env->pc);
@@ -1005,6 +1023,9 @@ int exec_env(CPULoongArchState *env) {
                 if (loongarch_smp_should_yield(env)) {
                     return 3;
                 }
+                if (studio_protocol_reached_instruction_limit(env)) {
+                    return 0;
+                }
 
                 /* Standalone step limit (no diffnet needed) */
                 {
@@ -1013,8 +1034,12 @@ int exec_env(CPULoongArchState *env) {
                         const char *v = getenv("EMU_MAX_INSTRS");
                         emu_max_inst = v ? atoi(v) : INT64_MAX;
                     }
-                    if (emu_max_inst > 0 && env->icount >= emu_max_inst)
+                    if (emu_max_inst > 0 && env->icount >= emu_max_inst) {
+                        if (studio_protocol_enabled()) {
+                            return 0;
+                        }
                         laemu_exit(0);
+                    }
                 }
 
             }
@@ -1455,6 +1480,9 @@ int main(int argc, char** argv, char **envp) {
         if (strcmp(argv[i], "--trace") == 0) {
             trace_enabled = true;
             argv[i] = NULL;
+        } else if (strcmp(argv[i], "--studio-json-final") == 0) {
+            studio_protocol_set_enabled(true);
+            argv[i] = NULL;
         } else if (strcmp(argv[i], "--trance_log_name") == 0 && i + 1 < argc) {
             strncpy(trace_log_name, argv[i + 1], PATH_MAX - 1);
             trace_log_name[PATH_MAX - 1] = '\0';
@@ -1482,7 +1510,7 @@ int main(int argc, char** argv, char **envp) {
         usage();
     }
     int c;
-    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:N:R:A:Q:")) != -1) {
+    while ((c = getopt(argc, argv, "+m:nk:d:c:D:C:E:gzbvwsp:N:" INSN_STATS_GETOPT "A:Q:")) != -1) {
         switch (c) {
             case 'm':
                 ram_size = atol(optarg) << 30;
@@ -1575,7 +1603,9 @@ int main(int argc, char** argv, char **envp) {
                 laemu_exit(EXIT_FAILURE);
                 break;
 #endif
+#ifdef CONFIG_INSN_STATS
             case 'R': report_filename = optarg; break;
+#endif
             case 'A': arch_name = optarg; break;
             case 'Q': kernel_cmdline = optarg; break;
             case '?':
@@ -1586,7 +1616,9 @@ int main(int argc, char** argv, char **envp) {
         }
     }
     setup_signal();
+#ifdef CONFIG_INSN_STATS
     insn_stats_init();
+#endif
 #ifndef CONFIG_USER_ONLY
     ram = alloc_ram(ram_size);
     qemu_log("pid:%d, ram_size:%lx kernel_filename:%s\n", getpid(), ram_size, kernel_filename);
@@ -1883,6 +1915,9 @@ int main(int argc, char** argv, char **envp) {
 #endif
         {
             exec_env(env);
+        }
+        if (studio_protocol_enabled()) {
+            studio_protocol_dump_final_state(env);
         }
     }
     if (trace_file) {

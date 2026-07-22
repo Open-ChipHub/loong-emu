@@ -857,11 +857,13 @@ static inline void laemu_exit(int64_t status) {
     restore_terminal();
 #endif
 
+#ifdef CONFIG_INSN_STATS
     extern void insn_stats_report(const char *, void *);
     extern char *report_filename;
     extern __thread CPULoongArchState *current_env;
     if (report_filename && report_filename[0])
         insn_stats_report(report_filename, current_env);
+#endif
     exit(status);
 }
 

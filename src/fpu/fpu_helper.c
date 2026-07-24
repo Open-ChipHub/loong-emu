@@ -10,6 +10,8 @@
 #include "exec/helper-proto.h"
 
 #include "fpu/softfloat.h"
+#include "fpu/festimate.h"
+#include "fpu/flogb.h"
 #include "internals.h"
 
 #define g_assert_not_reached abort
@@ -295,20 +297,53 @@ uint64_t helper_frecip_d(CPULoongArchState *env, uint64_t fj)
 uint64_t helper_frsqrt_s(CPULoongArchState *env, uint64_t fj)
 {
     uint64_t fd;
-    uint32_t fp;
 
-    fp = float32_sqrt((uint32_t)fj, &env->fp_status);
-    fd = nanbox_s(float32_div(float32_one, fp, &env->fp_status));
+    fd = nanbox_s(float32_rsqrt((uint32_t)fj, &env->fp_status));
     update_fcsr0(env, GETPC());
     return fd;
 }
 
 uint64_t helper_frsqrt_d(CPULoongArchState *env, uint64_t fj)
 {
-    uint64_t fp, fd;
+    uint64_t fd;
 
-    fp = float64_sqrt(fj, &env->fp_status);
-    fd = float64_div(float64_one, fp, &env->fp_status);
+    fd = float64_rsqrt(fj, &env->fp_status);
+    update_fcsr0(env, GETPC());
+    return fd;
+}
+
+uint64_t helper_frecipe_s(CPULoongArchState *env, uint64_t fj)
+{
+    uint64_t fd;
+
+    fd = nanbox_s(la_festimate32((uint32_t)fj, false, &env->fp_status));
+    update_fcsr0(env, GETPC());
+    return fd;
+}
+
+uint64_t helper_frecipe_d(CPULoongArchState *env, uint64_t fj)
+{
+    uint64_t fd;
+
+    fd = la_festimate64(fj, false, &env->fp_status);
+    update_fcsr0(env, GETPC());
+    return fd;
+}
+
+uint64_t helper_frsqrte_s(CPULoongArchState *env, uint64_t fj)
+{
+    uint64_t fd;
+
+    fd = nanbox_s(la_festimate32((uint32_t)fj, true, &env->fp_status));
+    update_fcsr0(env, GETPC());
+    return fd;
+}
+
+uint64_t helper_frsqrte_d(CPULoongArchState *env, uint64_t fj)
+{
+    uint64_t fd;
+
+    fd = la_festimate64(fj, true, &env->fp_status);
     update_fcsr0(env, GETPC());
     return fd;
 }
@@ -316,29 +351,18 @@ uint64_t helper_frsqrt_d(CPULoongArchState *env, uint64_t fj)
 uint64_t helper_flogb_s(CPULoongArchState *env, uint64_t fj)
 {
     uint64_t fd;
-    uint32_t fp;
-    float_status *status = &env->fp_status;
-    FloatRoundMode old_mode = get_float_rounding_mode(status);
 
-    set_float_rounding_mode(float_round_down, status);
-    fp = float32_log2((uint32_t)fj, status);
-    fd = nanbox_s(float32_round_to_int(fp, status));
-    set_float_rounding_mode(old_mode, status);
-    update_fcsr0_mask(env, GETPC(), float_flag_inexact);
+    fd = nanbox_s(la_flogb32((uint32_t)fj, &env->fp_status));
+    update_fcsr0(env, GETPC());
     return fd;
 }
 
 uint64_t helper_flogb_d(CPULoongArchState *env, uint64_t fj)
 {
     uint64_t fd;
-    float_status *status = &env->fp_status;
-    FloatRoundMode old_mode = get_float_rounding_mode(status);
 
-    set_float_rounding_mode(float_round_down, status);
-    fd = float64_log2(fj, status);
-    fd = float64_round_to_int(fd, status);
-    set_float_rounding_mode(old_mode, status);
-    update_fcsr0_mask(env, GETPC(), float_flag_inexact);
+    fd = la_flogb64(fj, &env->fp_status);
+    update_fcsr0(env, GETPC());
     return fd;
 }
 

@@ -1093,8 +1093,12 @@ static bool trans_ll_w(CPULoongArchState *env, arg_ll_w *restrict a) {
 }
 static bool trans_sc_w(CPULoongArchState *env, arg_sc_w *restrict a) {
     hwaddr ha = store_pa(env, env->gpr[a->rj] + a->imm);
-    if (FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
-        env->lladdr == ha && env->llval == ram_ldw(ha)) {
+    bool sc_success = env->difftest_sc_override_valid
+        ? env->difftest_sc_override_success
+        : FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
+          env->lladdr == ha && env->llval == ram_ldw(ha);
+    env->difftest_sc_override_valid = false;
+    if (sc_success) {
         ram_stw(ha, env->gpr[a->rd]);
         env->gpr[a->rd] = 1;
     } else {
@@ -1115,8 +1119,12 @@ static bool trans_ll_d(CPULoongArchState *env, arg_ll_d *restrict a) {
 }
 static bool trans_sc_d(CPULoongArchState *env, arg_sc_d *restrict a) {
     hwaddr ha = store_pa(env, env->gpr[a->rj] + a->imm);
-    if (FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
-        env->lladdr == ha && env->llval == ram_ldd(ha)) {
+    bool sc_success = env->difftest_sc_override_valid
+        ? env->difftest_sc_override_success
+        : FIELD_EX64(env->CSR_LLBCTL, CSR_LLBCTL, ROLLB) &&
+          env->lladdr == ha && env->llval == ram_ldd(ha);
+    env->difftest_sc_override_valid = false;
+    if (sc_success) {
         ram_std(ha, env->gpr[a->rd]);
         env->gpr[a->rd] = 1;
     } else {

@@ -219,6 +219,7 @@ void difftest_init(void)
     CPUState *cs = CPU(cpu);
     cs->cluster_index = -1;
     cpu_register(cs);
+    loongarch_smp_init_iocsr();
     current_cpu = cs;
     CPULoongArchState* env = &cpu->env;
     cs->env = env;
@@ -499,82 +500,81 @@ void difftest_regcpy(void* state, bool is_from_dut, bool is_fp)
     }
 }
 
-// ── difftest_csrcpy: CSR-only state copy ──
+// ── difftest_csrcpy: CSR-indexed snapshot/replay state copy ──
+
+void difftest_csrcpy_idx(int csr_idx, uint64_t* dut_buf, uint64_t mask,
+                         bool direction);
 
 void difftest_csrcpy(void* state, bool is_from_dut)
 {
-    la_ref_state_t* s = (la_ref_state_t*)state;
-    CPULoongArchState* env = current_env;
+    uint64_t* csr_state = (uint64_t*)state;
 
-    if (is_from_dut) {
-        env->CSR_CRMD     = s->csr.crmd;
-        env->CSR_PRMD     = s->csr.prmd;
-        env->CSR_EUEN     = s->csr.euen;
-        env->CSR_ECFG     = s->csr.ecfg;
-        env->CSR_ESTAT    = s->csr.estat;
-        env->CSR_ERA      = s->csr.era;
-        env->CSR_BADV     = s->csr.badv;
-        env->CSR_EENTRY   = s->csr.eentry;
-        env->CSR_TLBIDX   = s->csr.tlbidx;
-        env->CSR_TLBEHI   = s->csr.tlbehi;
-        env->CSR_TLBELO0  = s->csr.tlbelo0;
-        env->CSR_TLBELO1  = s->csr.tlbelo1;
-        env->CSR_ASID     = s->csr.asid;
-        env->CSR_PGDL     = s->csr.pgdl;
-        env->CSR_PGDH     = s->csr.pgdh;
-        env->CSR_SAVE[0]  = s->csr.save0;
-        env->CSR_SAVE[1]  = s->csr.save1;
-        env->CSR_SAVE[2]  = s->csr.save2;
-        env->CSR_SAVE[3]  = s->csr.save3;
-        env->CSR_SAVE[4]  = s->csr.save4;
-        env->CSR_SAVE[5]  = s->csr.save5;
-        env->CSR_SAVE[6]  = s->csr.save6;
-        env->CSR_SAVE[7]  = s->csr.save7;
-        env->CSR_TID      = s->csr.tid;
-        env->CSR_TCFG     = s->csr.tcfg;
-        sync_timer_from_tval(env, s->csr.tval);
-        env->CSR_TICLR    = s->csr.ticlr;
-        env->CSR_LLBCTL   = s->csr.llbctl;
-        env->CSR_TLBRENTRY = s->csr.tlbrentry;
-        env->CSR_DMW[0]   = s->csr.dmw0;
-        env->CSR_DMW[1]   = s->csr.dmw1;
-        env->CSR_DMW[2]   = s->csr.dmw2;
-        env->CSR_DMW[3]   = s->csr.dmw3;
-    } else {
-        s->csr.crmd       = env->CSR_CRMD;
-        s->csr.prmd       = env->CSR_PRMD;
-        s->csr.euen       = env->CSR_EUEN;
-        s->csr.ecfg       = env->CSR_ECFG;
-        s->csr.estat      = env->CSR_ESTAT;
-        s->csr.era        = env->CSR_ERA;
-        s->csr.badv       = env->CSR_BADV;
-        s->csr.eentry     = env->CSR_EENTRY;
-        s->csr.tlbidx     = env->CSR_TLBIDX;
-        s->csr.tlbehi     = env->CSR_TLBEHI;
-        s->csr.tlbelo0    = env->CSR_TLBELO0;
-        s->csr.tlbelo1    = env->CSR_TLBELO1;
-        s->csr.asid       = env->CSR_ASID;
-        s->csr.pgdl       = env->CSR_PGDL;
-        s->csr.pgdh       = env->CSR_PGDH;
-        s->csr.save0      = env->CSR_SAVE[0];
-        s->csr.save1      = env->CSR_SAVE[1];
-        s->csr.save2      = env->CSR_SAVE[2];
-        s->csr.save3      = env->CSR_SAVE[3];
-        s->csr.save4      = env->CSR_SAVE[4];
-        s->csr.save5      = env->CSR_SAVE[5];
-        s->csr.save6      = env->CSR_SAVE[6];
-        s->csr.save7      = env->CSR_SAVE[7];
-        s->csr.tid        = env->CSR_TID;
-        s->csr.tcfg       = env->CSR_TCFG;
-        s->csr.tval       = ref_timer_tval(env);
-        s->csr.ticlr      = env->CSR_TICLR;
-        s->csr.llbctl     = env->CSR_LLBCTL;
-        s->csr.tlbrentry  = env->CSR_TLBRENTRY;
-        s->csr.dmw0       = env->CSR_DMW[0];
-        s->csr.dmw1       = env->CSR_DMW[1];
-        s->csr.dmw2       = env->CSR_DMW[2];
-        s->csr.dmw3       = env->CSR_DMW[3];
+#define SNAPSHOT_CSR(CSR)                                                     \
+    difftest_csrcpy_idx(LOONGARCH_CSR_ ## CSR,                               \
+                        &csr_state[LOONGARCH_CSR_ ## CSR], ~0ULL, is_from_dut)
+
+    SNAPSHOT_CSR(CRMD);
+    SNAPSHOT_CSR(PRMD);
+    SNAPSHOT_CSR(EUEN);
+    SNAPSHOT_CSR(MISC);
+    SNAPSHOT_CSR(ECFG);
+    SNAPSHOT_CSR(ESTAT);
+    SNAPSHOT_CSR(ERA);
+    SNAPSHOT_CSR(BADV);
+    SNAPSHOT_CSR(BADI);
+    SNAPSHOT_CSR(EENTRY);
+    SNAPSHOT_CSR(TLBIDX);
+    SNAPSHOT_CSR(TLBEHI);
+    SNAPSHOT_CSR(TLBELO0);
+    SNAPSHOT_CSR(TLBELO1);
+    SNAPSHOT_CSR(ASID);
+    SNAPSHOT_CSR(PGDL);
+    SNAPSHOT_CSR(PGDH);
+    SNAPSHOT_CSR(PGD);
+    SNAPSHOT_CSR(PWCL);
+    SNAPSHOT_CSR(PWCH);
+    SNAPSHOT_CSR(STLBPS);
+    SNAPSHOT_CSR(RVACFG);
+    SNAPSHOT_CSR(CPUID);
+    SNAPSHOT_CSR(PRCFG1);
+    SNAPSHOT_CSR(PRCFG2);
+    SNAPSHOT_CSR(PRCFG3);
+    for (int i = 0; i < 16; i++) {
+        int csr = LOONGARCH_CSR_SAVE(i);
+        difftest_csrcpy_idx(csr, &csr_state[csr], ~0ULL, is_from_dut);
     }
+    SNAPSHOT_CSR(TID);
+    SNAPSHOT_CSR(TCFG);
+    SNAPSHOT_CSR(TVAL);
+    SNAPSHOT_CSR(CNTC);
+    SNAPSHOT_CSR(TICLR);
+    SNAPSHOT_CSR(LLBCTL);
+    SNAPSHOT_CSR(IMPCTL1);
+    SNAPSHOT_CSR(IMPCTL2);
+    SNAPSHOT_CSR(TLBRENTRY);
+    SNAPSHOT_CSR(TLBRBADV);
+    SNAPSHOT_CSR(TLBRERA);
+    SNAPSHOT_CSR(TLBRSAVE);
+    SNAPSHOT_CSR(TLBRELO0);
+    SNAPSHOT_CSR(TLBRELO1);
+    SNAPSHOT_CSR(TLBREHI);
+    SNAPSHOT_CSR(TLBRPRMD);
+    SNAPSHOT_CSR(MERRCTL);
+    SNAPSHOT_CSR(MERRINFO1);
+    SNAPSHOT_CSR(MERRINFO2);
+    SNAPSHOT_CSR(MERRENTRY);
+    SNAPSHOT_CSR(MERRERA);
+    SNAPSHOT_CSR(MERRSAVE);
+    SNAPSHOT_CSR(CTAG);
+    for (int i = 0; i < 4; i++) {
+        int csr = LOONGARCH_CSR_DMW(i);
+        difftest_csrcpy_idx(csr, &csr_state[csr], ~0ULL, is_from_dut);
+    }
+    SNAPSHOT_CSR(DBG);
+    SNAPSHOT_CSR(DERA);
+    SNAPSHOT_CSR(DSAVE);
+
+#undef SNAPSHOT_CSR
 }
 
 // ── difftest_display ──
@@ -609,7 +609,13 @@ void update_dynamic_config(void* config)
 
 void difftest_uarchstatus_sync(void* status)
 {
-    (void)status;
+    typedef struct DiffTestSyncState {
+        uint64_t sc_fail;
+    } DiffTestSyncState;
+    const DiffTestSyncState *sync = (const DiffTestSyncState *)status;
+
+    current_env->difftest_sc_override_valid = true;
+    current_env->difftest_sc_override_success = sync->sc_fail == 0;
 }
 
 int difftest_store_commit(uint64_t* addr, uint64_t* data, uint8_t* mask)
@@ -793,12 +799,44 @@ void difftest_tlbcpy(void *state, bool direction)
                    "LoongArch DiffTest TLB entry count mismatch");
     _Static_assert(sizeof(la_tlb_entry_t) == sizeof(LoongArchTLB),
                    "LoongArch DiffTest TLB entry size mismatch");
+    _Static_assert(LA_DIFFTEST_TC_ENTRIES == TC_NUM,
+                   "LoongArch DiffTest translation cache entry count mismatch");
+    _Static_assert(sizeof(la_tlb_cache_entry_t) == sizeof(TLBCache),
+                   "LoongArch DiffTest translation cache entry size mismatch");
 
     lsassert(tlb_state != NULL);
     difftest_cpy_helper(current_env->tlb, tlb_state->entry,
                         sizeof(current_env->tlb), direction);
+    difftest_cpy_helper(current_env->tc_load, tlb_state->tc_load,
+                        sizeof(current_env->tc_load), direction);
+    difftest_cpy_helper(current_env->tc_store, tlb_state->tc_store,
+                        sizeof(current_env->tc_store), direction);
+    difftest_cpy_helper(current_env->tc_fetch, tlb_state->tc_fetch,
+                        sizeof(current_env->tc_fetch), direction);
+    difftest_cpy_helper(&current_env->lladdr, &tlb_state->lladdr,
+                        sizeof(current_env->lladdr), direction);
+    difftest_cpy_helper(&current_env->llval, &tlb_state->llval,
+                        sizeof(current_env->llval), direction);
+    difftest_cpy_helper(&current_env->difftest_sc_override_valid,
+                        &tlb_state->sc_override_valid,
+                        sizeof(current_env->difftest_sc_override_valid), direction);
+    difftest_cpy_helper(&current_env->difftest_sc_override_success,
+                        &tlb_state->sc_override_success,
+                        sizeof(current_env->difftest_sc_override_success), direction);
+
+    if (direction == REF_TO_DUT) {
+        uint64_t rand_calls;
+        int32_t forced_index;
+        helper_get_tlb_snapshot_state(&rand_calls, &forced_index);
+        tlb_state->tlb_rand_calls = rand_calls;
+        tlb_state->forced_tlbfill_index = forced_index;
+    } else {
+        helper_set_tlb_snapshot_state(tlb_state->tlb_rand_calls,
+                                      tlb_state->forced_tlbfill_index);
+    }
 
     if (direction == DUT_TO_REF) {
-        cpu_clear_tc(current_env);
+        /* Decoded host function pointers are process-local and are rebuilt lazily. */
+        memset(current_env->inscache, -1, sizeof(current_env->inscache));
     }
 }

@@ -721,6 +721,14 @@ typedef arg_ff arg_frsqrt_s;
 static bool trans_frsqrt_s(DisasContext *ctx, arg_frsqrt_s *a);
 typedef arg_ff arg_frsqrt_d;
 static bool trans_frsqrt_d(DisasContext *ctx, arg_frsqrt_d *a);
+typedef arg_ff arg_frecipe_s;
+static bool trans_frecipe_s(DisasContext *ctx, arg_frecipe_s *a);
+typedef arg_ff arg_frecipe_d;
+static bool trans_frecipe_d(DisasContext *ctx, arg_frecipe_d *a);
+typedef arg_ff arg_frsqrte_s;
+static bool trans_frsqrte_s(DisasContext *ctx, arg_frsqrte_s *a);
+typedef arg_ff arg_frsqrte_d;
+static bool trans_frsqrte_d(DisasContext *ctx, arg_frsqrte_d *a);
 typedef arg_fff arg_fscaleb_s;
 static bool trans_fscaleb_s(DisasContext *ctx, arg_fscaleb_s *a);
 typedef arg_fff arg_fscaleb_d;
@@ -1843,6 +1851,8 @@ typedef arg_vv_i arg_vfrstpi_b;
 static bool trans_vfrstpi_b(DisasContext *ctx, arg_vfrstpi_b *a);
 typedef arg_vv_i arg_vfrstpi_h;
 static bool trans_vfrstpi_h(DisasContext *ctx, arg_vfrstpi_h *a);
+typedef arg_vv_i arg_vmepatmsk_v;
+static bool trans_vmepatmsk_v(DisasContext *ctx, arg_vmepatmsk_v *a);
 typedef arg_vvv arg_vfadd_s;
 static bool trans_vfadd_s(DisasContext *ctx, arg_vfadd_s *a);
 typedef arg_vvv arg_vfadd_d;
@@ -1859,6 +1869,10 @@ typedef arg_vvv arg_vfdiv_s;
 static bool trans_vfdiv_s(DisasContext *ctx, arg_vfdiv_s *a);
 typedef arg_vvv arg_vfdiv_d;
 static bool trans_vfdiv_d(DisasContext *ctx, arg_vfdiv_d *a);
+typedef arg_vvv arg_vfscaleb_s;
+static bool trans_vfscaleb_s(DisasContext *ctx, arg_vfscaleb_s *a);
+typedef arg_vvv arg_vfscaleb_d;
+static bool trans_vfscaleb_d(DisasContext *ctx, arg_vfscaleb_d *a);
 typedef arg_vvvv arg_vfmadd_s;
 static bool trans_vfmadd_s(DisasContext *ctx, arg_vfmadd_s *a);
 typedef arg_vvvv arg_vfmadd_d;
@@ -5248,11 +5262,35 @@ cpu_put_ic(ctx, (bool (*)(void*, void*))trans_frsqrt_s, &u.f_ff, insn, "frsqrt_s
 cpu_put_ic(ctx, (bool (*)(void*, void*))trans_frsqrt_d, &u.f_ff, insn, "frsqrt_d");
                     if (trans_frsqrt_d(ctx, &u.f_ff)) return true;
                     break;
+                case 0x1d:
+                    /* 00000001 00010100 011101.. ........ */
+                    decode_extract_ff(ctx, &u.f_ff, insn);
+cpu_put_ic(ctx, (bool (*)(void*, void*))trans_frecipe_s, &u.f_ff, insn, "frecipe_s");
+                    if (trans_frecipe_s(ctx, &u.f_ff)) return true;
+                    break;
+                case 0x1e:
+                    /* 00000001 00010100 011110.. ........ */
+                    decode_extract_ff(ctx, &u.f_ff, insn);
+cpu_put_ic(ctx, (bool (*)(void*, void*))trans_frecipe_d, &u.f_ff, insn, "frecipe_d");
+                    if (trans_frecipe_d(ctx, &u.f_ff)) return true;
+                    break;
                 }
                 break;
             case 0x29:
                 /* 00000001 00010100 1....... ........ */
                 switch ((insn >> 10) & 0x1f) {
+                case 0x1:
+                    /* 00000001 00010100 100001.. ........ */
+                    decode_extract_ff(ctx, &u.f_ff, insn);
+cpu_put_ic(ctx, (bool (*)(void*, void*))trans_frsqrte_s, &u.f_ff, insn, "frsqrte_s");
+                    if (trans_frsqrte_s(ctx, &u.f_ff)) return true;
+                    break;
+                case 0x2:
+                    /* 00000001 00010100 100010.. ........ */
+                    decode_extract_ff(ctx, &u.f_ff, insn);
+cpu_put_ic(ctx, (bool (*)(void*, void*))trans_frsqrte_d, &u.f_ff, insn, "frsqrte_d");
+                    if (trans_frsqrte_d(ctx, &u.f_ff)) return true;
+                    break;
                 case 0x5:
                     /* 00000001 00010100 100101.. ........ */
                     /* ../target/loongarch/insns.decode:408 */
@@ -9765,6 +9803,16 @@ cpu_put_ic(ctx, (bool (*)(void*, void*))trans_vfmina_d, &u.f_vvv, insn, "vfmina_
             /* 01110001 010001.. ........ ........ */
             decode_extract_vvv(ctx, &u.f_vvv, insn);
             switch ((insn >> 15) & 0x7) {
+            case 0x1:
+                /* 01110001 01000100 1....... ........ */
+cpu_put_ic(ctx, (bool (*)(void*, void*))trans_vfscaleb_s, &u.f_vvv, insn, "vfscaleb_s");
+                if (trans_vfscaleb_s(ctx, &u.f_vvv)) return true;
+                break;
+            case 0x2:
+                /* 01110001 01000101 0....... ........ */
+cpu_put_ic(ctx, (bool (*)(void*, void*))trans_vfscaleb_d, &u.f_vvv, insn, "vfscaleb_d");
+                if (trans_vfscaleb_d(ctx, &u.f_vvv)) return true;
+                break;
             case 0x4:
                 /* 01110001 01000110 0....... ........ */
                 /* ../target/loongarch/insns.decode:1107 */
@@ -10179,6 +10227,11 @@ cpu_put_ic(ctx, (bool (*)(void*, void*))trans_vfrstpi_b, &u.f_vv_i, insn, "vfrst
                 /* ../target/loongarch/insns.decode:1060 */
 cpu_put_ic(ctx, (bool (*)(void*, void*))trans_vfrstpi_h, &u.f_vv_i, insn, "vfrstpi_h");
                 if (trans_vfrstpi_h(ctx, &u.f_vv_i)) return true;
+                break;
+            case 0x7:
+                /* 01110010 10011011 1....... ........ */
+cpu_put_ic(ctx, (bool (*)(void*, void*))trans_vmepatmsk_v, &u.f_vv_i, insn, "vmepatmsk_v");
+                if (trans_vmepatmsk_v(ctx, &u.f_vv_i)) return true;
                 break;
             }
             break;

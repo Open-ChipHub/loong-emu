@@ -92,6 +92,10 @@ static bool trans_frecip_s(CPULoongArchState *env, arg_frecip_s *restrict a) {CH
 static bool trans_frecip_d(CPULoongArchState *env, arg_frecip_d *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_frecip_d);}
 static bool trans_frsqrt_s(CPULoongArchState *env, arg_frsqrt_s *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_frsqrt_s);}
 static bool trans_frsqrt_d(CPULoongArchState *env, arg_frsqrt_d *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_frsqrt_d);}
+static bool trans_frecipe_s(CPULoongArchState *env, arg_frecipe_s *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_frecipe_s);}
+static bool trans_frecipe_d(CPULoongArchState *env, arg_frecipe_d *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_frecipe_d);}
+static bool trans_frsqrte_s(CPULoongArchState *env, arg_frsqrte_s *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_frsqrte_s);}
+static bool trans_frsqrte_d(CPULoongArchState *env, arg_frsqrte_d *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_frsqrte_d);}
 static bool trans_flogb_s(CPULoongArchState *env, arg_flogb_s *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_flogb_s);}
 static bool trans_flogb_d(CPULoongArchState *env, arg_flogb_d *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_flogb_d);}
 static bool trans_fclass_s(CPULoongArchState *env, arg_fclass_s *restrict a) {CHECK_FPE(8); return gen_ff(env, a, helper_fclass_s);}
@@ -217,9 +221,7 @@ static bool trans_movfr2gr_d(CPULoongArchState *env, arg_movfr2gr_d *restrict a)
 }
 static bool trans_movfrh2gr_s(CPULoongArchState *env, arg_movfrh2gr_s *restrict a) {
     CHECK_FPE(8);
-    TCGv src = get_fpr(ctx, a->fj);
-    TCGv dest = src;
-    gen_set_gpr(env, a->rd, dest, EXT_SIGN);
+    env->gpr[a->rd] = (int64_t)(int32_t)env->fpr[a->fj].vreg.W[1];
     env->pc += 4;
     return true;
 }

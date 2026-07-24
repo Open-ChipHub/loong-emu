@@ -401,6 +401,8 @@ typedef struct CPUArchState {
 
     uint64_t lladdr; /* LL virtual address compared against SC */
     uint64_t llval;
+    bool difftest_sc_override_valid;
+    bool difftest_sc_override_success;
 
     uint64_t prev_pc;
     uint32_t insn;
@@ -723,6 +725,8 @@ void helper_tlbrd(CPULoongArchState *env);
 void helper_tlbwr(CPULoongArchState *env);
 void helper_tlbfill(CPULoongArchState *env);
 void helper_set_tlbfill_index(int index);
+void helper_get_tlb_snapshot_state(uint64_t *rand_calls, int32_t *forced_index);
+void helper_set_tlb_snapshot_state(uint64_t rand_calls, int32_t forced_index);
 void helper_tlbclr(CPULoongArchState *env);
 void helper_tlbflush(CPULoongArchState *env);
 void helper_invtlb_all(CPULoongArchState *env);

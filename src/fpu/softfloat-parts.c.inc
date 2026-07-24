@@ -276,7 +276,12 @@ static void partsN(uncanon_normal)(FloatPartsN *p, float_status *s,
         exp = (p->frac_hi & DECOMPOSED_IMPLICIT_BIT) && !fmt->m68k_denormal;
         frac_shr(p, frac_shift);
 
-        if (is_tiny && (flags & float_flag_inexact)) {
+        /* LoongArch detects underflow after rounding and only for a
+         * non-zero tiny result.  An inexact result rounded all the way to
+         * signed zero therefore raises I without U. */
+        if (is_tiny
+            && (flags & float_flag_inexact)
+            && !((exp == 0) && frac_eqz(p))) {
             flags |= float_flag_underflow;
         }
         if (exp == 0 && frac_eqz(p)) {

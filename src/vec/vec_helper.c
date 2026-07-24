@@ -9,6 +9,7 @@
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "fpu/softfloat.h"
+#include "fpu/flogb.h"
 #include "internals.h"
 
 #include "vec.h"
@@ -2502,6 +2503,24 @@ void HELPER(NAME)(void *vd, void *vj, void *vk,             \
     }                                                       \
 }
 
+static uint32_t do_fscaleb_32(uint32_t fj, uint32_t fk,
+                              float_status *status)
+{
+    int32_t n = (int32_t)fk;
+
+    n = n > 0x200 ? 0x200 : n < -0x200 ? -0x200 : n;
+    return float32_scalbn(fj, n, status);
+}
+
+static uint64_t do_fscaleb_64(uint64_t fj, uint64_t fk,
+                              float_status *status)
+{
+    int64_t n = (int64_t)fk;
+
+    n = n > 0x1000 ? 0x1000 : n < -0x1000 ? -0x1000 : n;
+    return float64_scalbn(fj, (int)n, status);
+}
+
 DO_3OP_F(vfadd_s, 32, UW, float32_add)
 DO_3OP_F(vfadd_d, 64, UD, float64_add)
 DO_3OP_F(vfsub_s, 32, UW, float32_sub)
@@ -2510,6 +2529,8 @@ DO_3OP_F(vfmul_s, 32, UW, float32_mul)
 DO_3OP_F(vfmul_d, 64, UD, float64_mul)
 DO_3OP_F(vfdiv_s, 32, UW, float32_div)
 DO_3OP_F(vfdiv_d, 64, UD, float64_div)
+DO_3OP_F(vfscaleb_s, 32, UW, do_fscaleb_32)
+DO_3OP_F(vfscaleb_d, 64, UD, do_fscaleb_64)
 DO_3OP_F(vfmax_s, 32, UW, float32_maxnum)
 DO_3OP_F(vfmax_d, 64, UD, float64_maxnum)
 DO_3OP_F(vfmin_s, 32, UW, float32_minnum)
@@ -2563,23 +2584,21 @@ void HELPER(NAME)(void *vd, void *vj,                    \
     }                                                    \
 }
 
-#define FLOGB(BIT, T)                                            \
-static T do_flogb_## BIT(CPULoongArchState *env, T fj)           \
-{                                                                \
-    T fp, fd;                                                    \
-    float_status *status = &env->fp_status;                      \
-    FloatRoundMode old_mode = get_float_rounding_mode(status);   \
-                                                                 \
-    set_float_rounding_mode(float_round_down, status);           \
-    fp = float ## BIT ##_log2(fj, status);                       \
-    fd = float ## BIT ##_round_to_int(fp, status);               \
-    set_float_rounding_mode(old_mode, status);                   \
-    vec_update_fcsr0_mask(env, GETPC(), float_flag_inexact);     \
-    return fd;                                                   \
+static uint32_t do_flogb_32(CPULoongArchState *env, uint32_t fj)
+{
+    uint32_t fd = la_flogb32(fj, &env->fp_status);
+
+    vec_update_fcsr0(env, GETPC());
+    return fd;
 }
 
-FLOGB(32, uint32_t)
-FLOGB(64, uint64_t)
+static uint64_t do_flogb_64(CPULoongArchState *env, uint64_t fj)
+{
+    uint64_t fd = la_flogb64(fj, &env->fp_status);
+
+    vec_update_fcsr0(env, GETPC());
+    return fd;
+}
 
 #define FCLASS(NAME, BIT, E, FN)                         \
 void HELPER(NAME)(void *vd, void *vj,                    \
@@ -2625,9 +2644,8 @@ FRECIP(64, uint64_t)
 #define FRSQRT(BIT, T)                                                  \
 static T do_frsqrt_## BIT(CPULoongArchState *env, T fj)                 \
 {                                                                       \
-    T fd, fp;                                                           \
-    fp = float ## BIT ##_sqrt(fj, &env->fp_status);                     \
-    fd = float ## BIT ##_div(float ## BIT ##_one, fp, &env->fp_status); \
+    T fd;                                                               \
+    fd = float ## BIT ##_rsqrt(fj, &env->fp_status);                    \
     vec_update_fcsr0(env, GETPC());                                     \
     return fd;                                                          \
 }

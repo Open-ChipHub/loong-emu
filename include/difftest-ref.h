@@ -71,6 +71,7 @@ typedef struct __attribute__((packed)) {
 #define LA_DIFFTEST_STLB_ENTRIES 2048
 #define LA_DIFFTEST_MTLB_ENTRIES 64
 #define LA_DIFFTEST_TLB_ENTRIES  (LA_DIFFTEST_STLB_ENTRIES + LA_DIFFTEST_MTLB_ENTRIES)
+#define LA_DIFFTEST_TC_ENTRIES   256
 
 typedef struct __attribute__((packed)) {
     uint64_t tlb_misc;
@@ -79,7 +80,21 @@ typedef struct __attribute__((packed)) {
 } la_tlb_entry_t;
 
 typedef struct __attribute__((packed)) {
+    uint64_t va;
+    uint64_t pa;
+} la_tlb_cache_entry_t;
+
+typedef struct __attribute__((packed)) {
     la_tlb_entry_t entry[LA_DIFFTEST_TLB_ENTRIES];
+    la_tlb_cache_entry_t tc_load[LA_DIFFTEST_TC_ENTRIES];
+    la_tlb_cache_entry_t tc_store[LA_DIFFTEST_TC_ENTRIES];
+    la_tlb_cache_entry_t tc_fetch[LA_DIFFTEST_TC_ENTRIES];
+    uint64_t lladdr;
+    uint64_t llval;
+    uint8_t sc_override_valid;
+    uint8_t sc_override_success;
+    uint64_t tlb_rand_calls;
+    int32_t forced_tlbfill_index;
 } la_tlb_state_t;
 
 #ifdef __cplusplus

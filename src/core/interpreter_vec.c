@@ -727,7 +727,7 @@ static uint64_t vldi_get_value(DisasContext *ctx, uint32_t imm)
         break;
     case 1:
         /* data: {2{16'0, imm[7:0], 8'0}} */
-        data = (t << 24) | (t << 8);
+        data = (t << 40) | (t << 8);
         break;
     case 2:
         /* data: {2{8'0, imm[7:0], 16'0}} */
@@ -1199,6 +1199,39 @@ gen_trans_vvvd(vfrstp_h, 16, vfrstp_h)
 gen_trans_vvid(vfrstpi_b, 16, vfrstpi_b)
 gen_trans_vvid(vfrstpi_h, 16, vfrstpi_h)
 
+static bool trans_vmepatmsk_v(CPULoongArchState *env,
+                              arg_vmepatmsk_v *restrict a)
+{
+    int i;
+    int j;
+
+    CHECK_FPE(16);
+    if (a->vj > 3) {
+        do_raise_exception(env, EXCCODE_INE, 0);
+        return true;
+    }
+    for (i = 0; i < 4; i++) {
+        for (j = 0; j < 4; j++) {
+            switch (a->vj) {
+            case 0:
+                env->fpr[a->vd].vreg.UB[4 * i + j] = j + a->imm;
+                break;
+            case 1:
+                env->fpr[a->vd].vreg.UB[4 * i + j] = i + j + a->imm;
+                break;
+            case 2:
+                env->fpr[a->vd].vreg.UB[4 * i + j] = i + j + a->imm + 4;
+                break;
+            case 3:
+                env->fpr[a->vd].vreg.UB[4 * i + j] = 4 * i + j + a->imm;
+                break;
+            }
+        }
+    }
+    env->pc += 4;
+    return true;
+}
+
 #define gen_trans_vvved(op, size, helper_name) \
 static bool glue(trans_, op)(CPULoongArchState *env, arg_vvv *restrict a) {   \
     CHECK_FPE(size);                                                   \
@@ -1217,6 +1250,8 @@ gen_trans_vvved(vfmul_s, 16, vfmul_s)
 gen_trans_vvved(vfmul_d, 16, vfmul_d)
 gen_trans_vvved(vfdiv_s, 16, vfdiv_s)
 gen_trans_vvved(vfdiv_d, 16, vfdiv_d)
+gen_trans_vvved(vfscaleb_s, 16, vfscaleb_s)
+gen_trans_vvved(vfscaleb_d, 16, vfscaleb_d)
 
 gen_trans_vvved(xvfadd_s, 32, vfadd_s)
 gen_trans_vvved(xvfadd_d, 32, vfadd_d)

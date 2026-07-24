@@ -177,6 +177,8 @@ static void fill_tlb_entry(CPULoongArchState *env, int index)
     tlb->tlb_entry1 = lo1;
 }
 
+static uint64_t tlb_rand_calls;
+
 /* Return an random value between low and high */
 static uint32_t get_random_tlb(uint32_t low, uint32_t high)
 {
@@ -184,10 +186,28 @@ static uint32_t get_random_tlb(uint32_t low, uint32_t high)
 
     // qemu_guest_getrandom_nofail(&val, sizeof(val));
     val = rand();
+    tlb_rand_calls++;
     return val % (high - low + 1) + low;
 }
 
 static int forced_tlbfill_index = -1;
+
+void helper_get_tlb_snapshot_state(uint64_t *rand_calls, int32_t *forced_index)
+{
+    *rand_calls = tlb_rand_calls;
+    *forced_index = forced_tlbfill_index;
+}
+
+void helper_set_tlb_snapshot_state(uint64_t rand_calls, int32_t forced_index)
+{
+    /* libc rand() is seeded by the DiffTest host before REF initialization. */
+    lsassert(tlb_rand_calls <= rand_calls);
+    while (tlb_rand_calls < rand_calls) {
+        (void)rand();
+        tlb_rand_calls++;
+    }
+    forced_tlbfill_index = forced_index;
+}
 
 void helper_set_tlbfill_index(int index)
 {

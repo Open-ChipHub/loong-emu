@@ -4536,6 +4536,49 @@ soft_f64_sqrt(float64 a, float_status *status)
     return float64_round_pack_canonical(&p, status);
 }
 
+/*
+ * Compute 1/sqrt(a) without rounding sqrt(a) to the destination format.
+ * The 128-bit parts path supplies more than twice the working precision
+ * required by float64, avoiding the target-precision double rounding of a
+ * separate sqrt followed by divide.
+ */
+static void parts128_rsqrt(FloatParts128 *a, float_status *status)
+{
+    FloatParts128 one = {
+        .cls = float_class_normal,
+        .exp = 0,
+        .frac_hi = DECOMPOSED_IMPLICIT_BIT,
+        .frac_lo = 0,
+    };
+
+    parts_sqrt(a, status, &float128_params);
+    *a = *parts_div(&one, a, status);
+}
+
+float32 float32_rsqrt(float32 a, float_status *status)
+{
+    FloatParts64 in64, out64;
+    FloatParts128 in128;
+
+    float32_unpack_canonical(&in64, a, status);
+    parts_float_to_float_widen(&in128, &in64, status);
+    parts128_rsqrt(&in128, status);
+    parts_float_to_float_narrow(&out64, &in128, status);
+    return float32_round_pack_canonical(&out64, status);
+}
+
+float64 float64_rsqrt(float64 a, float_status *status)
+{
+    FloatParts64 in64, out64;
+    FloatParts128 in128;
+
+    float64_unpack_canonical(&in64, a, status);
+    parts_float_to_float_widen(&in128, &in64, status);
+    parts128_rsqrt(&in128, status);
+    parts_float_to_float_narrow(&out64, &in128, status);
+    return float64_round_pack_canonical(&out64, status);
+}
+
 float32 QEMU_FLATTEN float32_sqrt(float32 xa, float_status *s)
 {
     union_float32 ua, ur;

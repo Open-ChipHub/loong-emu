@@ -149,3 +149,4 @@ clean:
 .EXTRA_PREREQS = Makefile
 -include $(USER_DEPS)
 -include $(KERNEL_DEPS)
+-include $(DIFF_DEPS)

@@ -315,7 +315,8 @@ static bool trans_movcf2gr(CPULoongArchState *env, arg_movcf2gr *restrict a) {
 }
 static bool trans_fld_s(CPULoongArchState *env, arg_fld_s *restrict a) {
     CHECK_FPE(8);
-    set_fpr_s(env, a->fd, ld_w(env, add_addr(env->gpr[a->rj], a->imm)));
+    set_fpr_word_result(env, a->fd,
+                        ld_w(env, add_addr(env->gpr[a->rj], a->imm)));
     env->pc += 4;
     return true;
 }
@@ -339,7 +340,8 @@ static bool trans_fst_d(CPULoongArchState *env, arg_fst_d *restrict a) {
 }
 static bool trans_fldx_s(CPULoongArchState *env, arg_fldx_s *restrict a) {
     CHECK_FPE(8);
-    set_fpr_s(env, a->fd, ld_w(env, add_addr(env->gpr[a->rj], env->gpr[a->rk])));
+    set_fpr_word_result(
+        env, a->fd, ld_w(env, add_addr(env->gpr[a->rj], env->gpr[a->rk])));
     env->pc += 4;
     return true;
 }
@@ -361,51 +363,61 @@ static bool trans_fstx_d(CPULoongArchState *env, arg_fstx_d *restrict a) {
     env->pc += 4;
     return true;
 }
+static inline void check_fp_bound(CPULoongArchState *env, int rj, int rk,
+                                  bool require_gt) {
+    uint64_t address = env->gpr[rj];
+    uint64_t bound = env->gpr[rk];
+    bool passed = require_gt ? address > bound : address <= bound;
+    if (!passed) {
+        env->CSR_BADV = address;
+        do_raise_exception(env, EXCCODE_BCE, 0);
+    }
+}
 static bool trans_fldgt_s(CPULoongArchState *env, arg_fldgt_s *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        set_fpr_s(env, a->fd, ld_w(env, env->gpr[a->rj]));
+    check_fp_bound(env, a->rj, a->rk, true);
+    set_fpr_word_result(env, a->fd, ld_w(env, env->gpr[a->rj]));
     env->pc += 4; return true;
 }
 static bool trans_fldgt_d(CPULoongArchState *env, arg_fldgt_d *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_d(env, env->gpr[a->rj]));
+    check_fp_bound(env, a->rj, a->rk, true);
+    set_fpr(env, a->fd, ld_d(env, env->gpr[a->rj]));
     env->pc += 4; return true;
 }
 static bool trans_fldle_s(CPULoongArchState *env, arg_fldle_s *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        set_fpr_s(env, a->fd, ld_w(env, env->gpr[a->rj]));
+    check_fp_bound(env, a->rj, a->rk, false);
+    set_fpr_word_result(env, a->fd, ld_w(env, env->gpr[a->rj]));
     env->pc += 4; return true;
 }
 static bool trans_fldle_d(CPULoongArchState *env, arg_fldle_d *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        set_fpr(env, a->fd, ld_d(env, env->gpr[a->rj]));
+    check_fp_bound(env, a->rj, a->rk, false);
+    set_fpr(env, a->fd, ld_d(env, env->gpr[a->rj]));
     env->pc += 4; return true;
 }
 static bool trans_fstgt_s(CPULoongArchState *env, arg_fstgt_s *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_w(env, env->gpr[a->rj], env->fpr[a->fd].vreg.W[0]);
+    check_fp_bound(env, a->rj, a->rk, true);
+    st_w(env, env->gpr[a->rj], env->fpr[a->fd].vreg.W[0]);
     env->pc += 4; return true;
 }
 static bool trans_fstgt_d(CPULoongArchState *env, arg_fstgt_d *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] > (int64_t)env->gpr[a->rk])
-        st_d(env, env->gpr[a->rj], env->fpr[a->fd].vreg.D[0]);
+    check_fp_bound(env, a->rj, a->rk, true);
+    st_d(env, env->gpr[a->rj], env->fpr[a->fd].vreg.D[0]);
     env->pc += 4; return true;
 }
 static bool trans_fstle_s(CPULoongArchState *env, arg_fstle_s *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_w(env, env->gpr[a->rj], env->fpr[a->fd].vreg.W[0]);
+    check_fp_bound(env, a->rj, a->rk, false);
+    st_w(env, env->gpr[a->rj], env->fpr[a->fd].vreg.W[0]);
     env->pc += 4; return true;
 }
 static bool trans_fstle_d(CPULoongArchState *env, arg_fstle_d *restrict a) {
     CHECK_FPE(8);
-    if ((int64_t)env->gpr[a->rj] <= (int64_t)env->gpr[a->rk])
-        st_d(env, env->gpr[a->rj], env->fpr[a->fd].vreg.D[0]);
+    check_fp_bound(env, a->rj, a->rk, false);
+    st_d(env, env->gpr[a->rj], env->fpr[a->fd].vreg.D[0]);
     env->pc += 4; return true;
 }

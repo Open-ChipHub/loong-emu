@@ -461,7 +461,7 @@ void loongarch_swiftcore_initfn(CPULoongArchState* env) {
 
     env->cpucfg[0] = 0x0014c010;
     env->cpucfg[1] = 0x07f2f27e;
-    env->cpucfg[2] = 0x0140c80f;
+    env->cpucfg[2] = 0x0140c84f;
     env->cpucfg[3] = 0x000008fe;
     env->cpucfg[4] = 0x05f5e100;
     env->cpucfg[5] = 0x00010001;

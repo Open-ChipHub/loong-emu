@@ -405,21 +405,47 @@ void difftest_memcpy_init(uint64_t guest_paddr, void* dut_buf, size_t n, bool di
 }
 
 // ── difftest_regcpy: register state copy using la_ref_state_t ──
-// is_fp == false: copy GPRs + CSRs + PC
-// is_fp == true:  copy FPRs + FCSR0 + CF
+// is_fp == false: copy GPRs + scalar FPRs + CSRs + PC
+// is_fp == true:  copy scalar FPRs only
 
 void difftest_regcpy(void* state, bool is_from_dut, bool is_fp)
 {
     la_ref_state_t* s = (la_ref_state_t*)state;
     CPULoongArchState* env = current_env;
+    int i;
 
     if (is_fp) {
-        difftest_cpy_helper(&env->fpr, &s->frf.value[0], sizeof(env->fpr[0]) * 32, is_from_dut);
+        for (i = 0; i < 32; i++) {
+            difftest_cpy_helper(&env->fpr[i].vreg.D[0],
+                                &s->frf.value[i],
+                                sizeof(s->frf.value[i]),
+                                is_from_dut);
+        }
         return;
     }
 
     // GPRs
     difftest_cpy_helper(&env->gpr, &s->xrf.value[0], sizeof(env->gpr[0]) * 32, is_from_dut);
+
+    // The generic DiffTest proxy requests one complete architectural snapshot
+    // with is_fp=false.  Keep the scalar low 64-bit view and the LSX low/high
+    // pair in that snapshot so every V/F destination is compared at its own
+    // commit point.  LASX lanes two and three are intentionally outside the
+    // current OpenLA264S architectural state contract.
+    for (i = 0; i < 32; i++) {
+        difftest_cpy_helper(&env->fpr[i].vreg.D[0],
+                            &s->frf.value[i],
+                            sizeof(s->frf.value[i]),
+                            is_from_dut);
+        difftest_cpy_helper(&env->fpr[i].vreg.D[0],
+                            &s->vrf.value[2 * i],
+                            sizeof(s->vrf.value[2 * i]),
+                            is_from_dut);
+        difftest_cpy_helper(&env->fpr[i].vreg.D[1],
+                            &s->vrf.value[2 * i + 1],
+                            sizeof(s->vrf.value[2 * i + 1]),
+                            is_from_dut);
+    }
 
     // PC
     if (is_from_dut) {

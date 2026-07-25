@@ -19,6 +19,12 @@ typedef struct {
     uint64_t value[32];
 } la_arch_fp_reg_t;
 
+// LSX aliases the 32 architectural FPRs as 128-bit vector registers.  The
+// generic DiffTest vector probe transports those registers as low/high pairs.
+typedef struct {
+    uint64_t value[64];
+} la_arch_vec_reg_t;
+
 // Must match the RTL probe DifftestCSRRegState in difftest.v
 // Fields: crmd, prmd, euen, ecfg, estat, era, badv, eentry,
 //         tlbidx, tlbehi, tlbelo0, tlbelo1, asid, pgdl, pgdh,
@@ -66,6 +72,7 @@ typedef struct __attribute__((packed)) {
     la_arch_fp_reg_t  frf;
     la_csr_state_t    csr;
     uint64_t          pc;
+    la_arch_vec_reg_t vrf;
 } la_ref_state_t;
 
 #define LA_DIFFTEST_STLB_ENTRIES 2048
